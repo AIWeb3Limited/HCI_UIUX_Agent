@@ -1,58 +1,345 @@
 from fake_api import *
-
-from flask import Flask, request, jsonify, session, render_template
+import supervision as sv
+from flask import Flask, request, jsonify, session, render_template, make_response
 from flask_session import Session
+from flask_cors import CORS
+from PIL import Image, ImageEnhance
+import numpy as np
+import cv2
+import os
+from openai import AzureOpenAI
+import json
+import torch
+import torchvision
+from groundingdino.util.inference import Model
+from segment_anything import sam_model_registry, SamPredictor
+import base64
+from io import BytesIO
+
+
+prev_object_class = None
+prev_image_data = None
+prev_masks = None
 
 app = Flask(__name__)
-
-# Configure session
 app.config['SECRET_KEY'] = 'your_secret_key'
 app.config['SESSION_TYPE'] = 'filesystem'  # Use filesystem-based sessions
 Session(app)
+
+# GroundingDINO+SAM configuration
+DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+GROUNDING_DINO_CONFIG_PATH = "../Grounded-Segment-Anything/GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py"
+GROUNDING_DINO_CHECKPOINT_PATH = "../CCA/checkpoints/groundingdino_swint_ogc.pth"
+SAM_ENCODER_VERSION = "vit_h"
+SAM_CHECKPOINT_PATH = "../Grounded-Segment-Anything/sam_vit_h_4b8939.pth"
+grounding_dino_model = Model(model_config_path=GROUNDING_DINO_CONFIG_PATH, model_checkpoint_path=GROUNDING_DINO_CHECKPOINT_PATH)
+sam = sam_model_registry[SAM_ENCODER_VERSION](checkpoint=SAM_CHECKPOINT_PATH)
+sam.to(device=DEVICE)
+sam_predictor = SamPredictor(sam)
+BOX_THRESHOLD = 0.35
+TEXT_THRESHOLD = 0.35
+NMS_THRESHOLD = 0.82
+
+def segment(sam_predictor: SamPredictor, image: np.ndarray, xyxy: np.ndarray) -> np.ndarray:
+    sam_predictor.set_image(image)
+    result_masks = []
+    for box in xyxy:
+        masks, scores, logits = sam_predictor.predict(
+            box=box,
+            multimask_output=True
+        )
+        index = np.argmax(scores)
+        result_masks.append(masks[index])
+    return np.array(result_masks)
+
+
+def object_segment(image, CLASSES):
+    if "the" not in CLASSES:
+        CLASSES = "the " + CLASSES
+    CLASSES = [CLASSES]
+
+    detections = grounding_dino_model.predict_with_classes(
+        image=image,
+        classes=CLASSES,
+        box_threshold=BOX_THRESHOLD,
+        text_threshold=TEXT_THRESHOLD
+    )
+    nms_idx = torchvision.ops.nms(
+        torch.from_numpy(detections.xyxy), 
+        torch.from_numpy(detections.confidence), 
+        NMS_THRESHOLD
+    ).numpy().tolist()
+    box_annotator = sv.BoxAnnotator()
+    labels = [
+        f"{CLASSES[class_id]} {confidence:0.2f}" 
+        for _, _, confidence, class_id, _, _ 
+        in detections]
+    print(f"Before NMS: {len(detections.xyxy)} boxes")
+    detections.xyxy = detections.xyxy[nms_idx]
+    detections.confidence = detections.confidence[nms_idx]
+    detections.class_id = detections.class_id[nms_idx]
+    print(f"After NMS: {len(detections.xyxy)} boxes")
+    annotated_frame = box_annotator.annotate(scene=image.copy(), detections=detections, labels=labels)
+
+    cv2.imwrite("dino_image.jpg", annotated_frame)
+    detections.mask = segment(
+        sam_predictor=sam_predictor,
+        image=cv2.cvtColor(image, cv2.COLOR_BGR2RGB),
+        xyxy=detections.xyxy
+    )
+    mask_annotator = sv.MaskAnnotator()
+    annotated_image = mask_annotator.annotate(scene=image.copy(), detections=detections)
+    cv2.imwrite("sam_image.jpg", annotated_image)
+    return detections.mask
+
+
 def process_symbol(s):
     lines = s.split('\n')
     if lines and lines[0] == "```html" and lines[-1] == "```":
         return '\n'.join(lines[1:-1])  # 删除第一行和最后一行
     return s
-# Mock processing function
-def process_message(message):
-    # Example: Convert message to uppercase as the processing logic
-    result=api_answer(message)
 
-    return process_symbol(result)
+
+def process_message(message):
+    result=api_answer(message)
+    return result
+
 
 @app.before_request
 def initialize_session():
+    if 'option_messages' not in session:
+        session['option_messages'] = []  
+    if 'ui_messages' not in session:
+        session['ui_messages'] = []  
 
-    if 'messages' not in session:
-        system_prompt = "针对用户的需求写出html代码，直接给出代码，以```html为第一行，```为最后一行。尽量多使用emoji，多使用渐变色，多增加互动内容，比如动画和鼠标悬浮气泡弹窗。我会将html放入一个小的容器里，所以尽可能简洁"
 
-        session['messages'] = []  # Initialize an empty list for messages
-        session['messages'].append(message_template('system',system_prompt))# Initialize an empty list for messages
 @app.route('/')
 def index():
     session.clear()  # 清除会话数据
     return render_template('index.html')
 
-@app.route('/send_message', methods=['POST'])
-def send_message():
+
+@app.route('/recognize', methods=['POST'])
+def recognize(user_message):
+    system_prompt = """
+        **Instruction**:
+        You are a tool selector for an image editing service. Based on the user's request, 
+        you need to determine which tool from the following list is most suitable to perform the desired action.
+            
+        **Available Tool**:
+        - contrast: Enhances or reduces the difference in brightness between areas of the image.
+        - brightness: Increases or decreases the overall lightness or darkness of the image.
+        - recolor: Changes the colors of the image, including applying filters or specific color transformations.
+
+        **Output Format**:
+        ```json
+        {"Tool": <tool_name>}
+        ```
+            
+        **Key Notes**:
+        - The output must be one of the tools listed below.
+        - Do not suggest any tools that are not in the provided list.
+        - Return the response in the json format.
+    """
+    session['recognize_messages'].append(message_template('system', system_prompt))
+    session['recognize_messages'].append(message_template('user', user_message))
+    response = json.loads(api_answer(session['recognize_messages'], "json"))
+    return response
+
+
+@app.route('/option', methods=['POST'])
+def option(user_message):
+    system_prompt = """
+        **Instructions**:
+        You are an intelligent image editing assistan for an color editing service. 
+        Your task is to interpret the user's request for changing the color of something and provide a corresponding gradient of hexadecimal color codes (from light to dark).
+        If the user specifies a particular color, provide a narrow range around the most common hexadecimal color codes for that color. 
+        If the request is more abstract or subjective, choose a wider range that best fits the description and would likely be considered aesthetically pleasing.
+        Additionally, you need to identify the object whose color should be changed.
+
+        **Guidelines**:
+        1. **Identify the Object:** Extract the name of the object that the user wants to change the color of. If the object is not clearly specified, infer it based on the context of the sentence.
+        2. **Determine the Color Gradient:**
+            - If the user specifies a concrete color (e.g., "red", "green", "blue"), provide a gradient of **at least 8** hexadecimal color codes that represent variations from light to dark shades of that color.
+            - If the user provides an abstract or subjective description (e.g., "make it look great", "a more vibrant color"), choose a gradient of **at least 8** hexadecimal color codes that fit the description based on common design principles and aesthetics.
+        3. **Provide the Hexadecimal Colors:** Always return the colors as hexadecimal color codes (#RRGGBB). Ensure the gradient transitions smoothly from light to dark.
+        4. **Format the Response:** Return the object and the hexadecimal color gradient in the json format.
+        
+        **Output Format**:
+        {
+            "Object Class": <object_class>,
+            "Color Gradient": ["#XXXXXX", "#XXXXXX", "#XXXXXX", "#XXXXXX", "#XXXXXX", ...] //range from lightest to darkest
+        }
+
+        **Examples**:  
+        User Request: "Make the sky look like a sunset."
+        ```json
+        {
+            "Object Class": "the sky",
+            "Color Gradient": ["#FFD700", "#FFA500", "#FF8C00", "#FF7F50", "#FF4500", "#E9967A", "#CD5C5C", "#8B4500"]
+        }
+        ```
+    """
+    session['option_messages'].append(message_template('system', system_prompt))
+    session['option_messages'].append(message_template('user', user_message))
+    response = json.loads(api_answer(session['option_messages'], "json"))
+    return response
+
+
+def hex_to_rgb(hex_color):
+    if len(hex_color) == 3:
+        return hex_color
+    hex_color = hex_color.lstrip('#')
+    if len(hex_color) != 6:
+        raise ValueError("Invalid hex color code")
+    r = int(hex_color[0:2], 16)
+    g = int(hex_color[2:4], 16)
+    b = int(hex_color[4:6], 16)
+
+    return [r, g, b]
+
+
+@app.route('/recolor', methods=['POST'])
+def recolor():
+    global prev_object_class, prev_image_data, prev_masks
     data = request.get_json()
-    if 'message' not in data:
-        return jsonify({"error": "Message content is required."}), 400
+    image_data = data['image']
+    object_class = data["ObjectClass"]
+    if image_data.startswith('data:image/png;base64,'):
+        header, base64_data = image_data.split(',', 1)
+    elif image_data.startswith('data:image/jpeg;base64,'):
+        header, base64_data = image_data.split(',', 1)
+    else:
+        return "Invalid image format", 400
+    image = base64.b64decode(base64_data)
+    image = np.frombuffer(image, np.uint8)
+    image = cv2.imdecode(image, cv2.IMREAD_COLOR)
+    if object_class != prev_object_class or image_data != prev_image_data:
+        masks = object_segment(image, object_class)
+        masks = masks.astype(np.uint8) * 255
+        prev_object_class = object_class
+        prev_image_data = image_data
+        prev_masks = masks
+    else:
+        masks = prev_masks
+    target_color_rgb = hex_to_rgb(data['RGBValue'])  
+    target_color_hsv = cv2.cvtColor(np.uint8([[target_color_rgb]]), cv2.COLOR_RGB2HSV)[0][0]
+    hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    h, s, v = cv2.split(hsv_image)
+    for mask in masks:
+        new_h = np.where(mask > 0, target_color_hsv[0], h)
+        s_factor = (target_color_hsv[1] / 255.0) if target_color_hsv[1] > 0 else 1.0
+        v_factor = (target_color_hsv[2] / 255.0) if target_color_hsv[2] > 0 else 1.0
+        new_s = np.where(mask > 0, np.clip(s * s_factor, 0, 255).astype(np.uint8), s)
+        new_v = np.where(mask > 0, np.clip(v * v_factor, 0, 255).astype(np.uint8), v)
 
-    user_message = data['message']
+        result_hsv = cv2.merge([new_h, new_s, new_v])
+        result_bgr = cv2.cvtColor(result_hsv, cv2.COLOR_HSV2BGR)
 
-    # Append the message to the user's session list
-    session['messages'].append(message_template('user',user_message))
-    session.modified = True
-    print(session['messages'])
-    # Process the message
-    response_message = process_message(session['messages'])
-    # response_message = "text"
-    session['messages'].append(message_template('assistant',response_message))
+    output_path = 'modified_image.jpg' 
+    cv2.imwrite(output_path, result_bgr)
 
-    # Return the processed message
-    return jsonify({"response": response_message})
+    _, buffer = cv2.imencode('.jpg', result_bgr)
+    encoded_image = base64.b64encode(buffer).decode('utf-8')
+    response = {
+        "modified_image": f"data:image/jpeg;base64,{encoded_image}"
+    }
+
+    return jsonify(response)
+
+
+@app.route('/brightness', methods=['POST'])
+def brightness():
+    data = request.get_json()
+    image_data = data['image']
+    diff_value = data['diffValue']
+    if image_data.startswith('data:image/png;base64,'):
+        header, base64_data = image_data.split(',', 1)
+    elif image_data.startswith('data:image/jpeg;base64,'):
+        header, base64_data = image_data.split(',', 1)
+    else:
+        return "Invalid image format", 400
+    image = base64.b64decode(base64_data)
+    image = Image.open(BytesIO(image))
+    enhancer = ImageEnhance.Brightness(image)
+    image_adjusted = enhancer.enhance(diff_value)
+    buffered = BytesIO()
+    image_adjusted.save(buffered, format="PNG")
+    encoded_image = base64.b64encode(buffered.getvalue())
+    response = {
+        "modified_image": f"data:image/jpeg;base64,{encoded_image}"
+    }
+
+    return jsonify(response)
+
+
+@app.route('/generate_ui', methods=['POST'])
+def generate_ui():
+    user_message = request.form['message']
+    image = request.files['image']
+    intent = recognize(user_message)
+    tool = intent["Tool"]
+    option_result = option(user_message)
+    object_class = option_result["Object Class"]
+    color_gradient = option_result["Color Gradient"]
+    system_prompt = f"""
+        You are an expert UI design assistant specialized in generating aesthetically pleasing, simple, and user-friendly HTML pages tailored to specific color editing tasks as per user requests. 
+        Your task is to generate complete, functional HTML code embedded with CSS and JavaScript based on the individual needs of each user. 
+        Ensure that the generated page meets the following criteria:
+
+        1. The layout should be intuitive and clear, facilitating quick familiarity and ease of use for users.
+        2. Include a color gradient filled into a slider bar based on: {color_gradient}, Include a color gradient filled into a slider bar based on: {color_gradient}, allowing users to drag a slider continuously along the gradient to select any color.
+        3. Adopt a minimalist and modern design style, with harmonious color schemes and avoid overly complex or harsh designs.
+        4. Make sure all interactive elements (buttons, sliders, etc.) are highly clickable and responsive.
+        5. Ensure the generated HTML code is well-structured, with clear comments to facilitate future maintenance.
+        6. The HTML should read the image from localStorage, specifically searching for the key "uploadedImage", and call the /recolor API using the keys: image, ObjectClass ({object_class}), and RGBValue, where RGBValue corresponds to the color selected by the user from the gradient slider and can be either a string or an array. The /recolor API ultimately returns a response as follows: response = {{ "modified_image": f"data:image/jpeg;base64,{{encoded_image}}" }}, and you need to use the modified_image field to obtain the result.
+        7. The layout should be in a left-aligned, chat-like format, ensuring it is not overly large, with the parent container size not exceeding 500px, but also sized adequately to accommodate the image. The page should always display only one image at a time.
+        8. Provide only the HTML code as output without any additional text or explanation.
+
+        Please adhere to the above guidelines to generate the HTML page code specifically for this user instruction: {user_message}
+    """
+    session['ui_messages'].append(message_template('system', system_prompt))
+    session['ui_messages'].append(message_template('user', "generate the UI"))
+    ui_response = process_symbol(api_answer(session['ui_messages']))
+    print(ui_response)
+    return jsonify({'response': ui_response})
+
+
+# @app.route('/generate_ui', methods=['POST'])
+# def generate_ui():
+#     user_message = request.form['message']
+#     image = request.files['image']
+#     option_result = option(user_message).json()
+#     object_class = option_result["Object Class"]
+#     color_gradient = option_result["Color Gradient"]
+#     system_prompt = f"""
+#         You are an expert UI design assistant specialized in generating aesthetically pleasing, simple, and user-friendly HTML pages tailored to specific image editing tasks as per user requests. 
+#         Your task is to generate complete, functional HTML code embedded with CSS and JavaScript based on the individual needs of each user. 
+#         Ensure that the generated page meets the following criteria:
+
+#         1. The layout should be intuitive and clear, facilitating quick familiarity and ease of use for users.
+#         2. Include only the necessary image editing functionalities requested by the user.
+#         3. Adopt a minimalist and modern design style, with harmonious color schemes and avoid overly complex or harsh designs.
+#         4. Make sure all interactive elements (buttons, sliders, etc.) are highly clickable and responsive.
+#         5. Incorporate necessary hint messages and help documentation specific to the included features to guide users on how to utilize them effectively.
+#         6. Ensure the generated HTML code is well-structured, with clear comments to facilitate future maintenance.
+#         7. Provide only the HTML code as output without any additional text or explanation.
+
+#         Please adhere to the above guidelines to generate the HTML page code specifically for this user instruction: {user_message}
+#     """
+#     session['ui_messages'].append(message_template('system', system_prompt))
+#     session['ui_messages'].append(message_template('user', "generate the UI"))
+#     ui_response = process_symbol(api_answer(session['ui_messages']))
+#     print(ui_response)
+#     print("finish")
+#     return jsonify({'response': ui_response})
+
+
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    return response
+
 
 if __name__ == '__main__':
     app.run(debug=True)

@@ -13,14 +13,13 @@
       flex-direction: column;
       align-items: center;
       background-color: #f4f4f4;
-      height: 100vh; /* 确保 body 高度为视口高度 */
+      height: 100vh;
     }
 
     .chat-container {
-
       width: calc(100vw - 20px);
-      height: calc(100vh - 20px); /* 减去适当的边距 */
-      margin: 10px 0; /* 给上下添加一些边距 */
+      height: calc(100vh - 20px);
+      margin: 10px 0;
       background-color: #ffffff;
       border: 1px solid #ccc;
       border-radius: 10px;
@@ -28,6 +27,7 @@
       display: flex;
       flex-direction: column;
     }
+
     .messages {
       flex: 1;
       padding: 20px;
@@ -38,7 +38,7 @@
     }
 
     .messages::before {
-      content: '\1F60A'; /* Smiley emoji */
+      content: '\1F60A';
       font-size: 48px;
       color: #ddd;
       display: flex;
@@ -58,7 +58,8 @@
 
     .message {
       display: flex;
-      align-items: center;
+      flex-direction: column;
+      align-items: flex-start;
       margin-bottom: 15px;
     }
 
@@ -67,16 +68,7 @@
     }
 
     .message.right {
-      justify-content: flex-end;
-    }
-
-    .message.left .icon {
-      order: -1;
-      margin-right: 10px;
-    }
-
-    .message.right .icon {
-      margin-left: 10px;
+      align-items: flex-end;
     }
 
     .message .icon {
@@ -88,8 +80,8 @@
       align-items: center;
       justify-content: center;
       font-weight: bold;
-      flex-shrink: 0; /* 防止缩小 */
-      flex-grow: 0; /* 防止放大 */
+      flex-shrink: 0;
+      flex-grow: 0;
     }
 
     .message .text {
@@ -98,8 +90,7 @@
       padding: 10px 15px;
       max-width: 100%;
       word-wrap: break-word;
-      max-height: none;
-      height: auto;
+      margin-top: 10px;
     }
 
     .message.left .text {
@@ -112,14 +103,38 @@
       align-items: center;
       padding: 10px;
       border-top: 1px solid #ccc;
+      background-color: #f8f9fa;
     }
 
-    .controls input {
+    .controls input[type="text"] {
       flex: 1;
       padding: 10px;
       margin-right: 10px;
       border: 1px solid #ccc;
       border-radius: 5px;
+      transition: border-color 0.3s;
+    }
+
+    .controls input[type="file"] {
+      display: none;
+    }
+
+    .upload-icon {
+      width: 40px;
+      height: 40px;
+      background-color: #007bff;
+      color: white;
+      border-radius: 5px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      margin-right: 10px;
+      transition: background-color 0.3s;
+    }
+
+    .upload-icon:hover {
+      background-color: #0056b3;
     }
 
     .controls button {
@@ -129,6 +144,7 @@
       background-color: #007bff;
       color: white;
       cursor: pointer;
+      transition: background-color 0.3s;
     }
 
     .controls button:hover {
@@ -143,10 +159,18 @@
       background-color: #28a745;
       color: white;
       cursor: pointer;
+      transition: background-color 0.3s;
     }
 
     .role-toggle:hover {
       background-color: #218838;
+    }
+
+    .image-preview {
+      max-width: 200px;
+      max-height: 200px;
+      border-radius: 10px;
+      margin-top: 10px;
     }
   </style>
 </head>
@@ -156,9 +180,11 @@
     <!-- Messages will be appended here -->
   </div>
   <div class="controls">
-    <input type="text" id="messageInput" placeholder="Type your message...">
-    <button id="sendButton">Send</button>
-    <button id="roleToggle" class="role-toggle">Debug</button>
+    <label for="imageInput" class="upload-icon" title="Upload Image">➕</label>
+    <input type="file" id="imageInput" accept="image/*" title="Choose an image">
+    <input type="text" id="messageInput" placeholder="Type your message..." title="Type your message">
+    <button id="sendButton" title="Send message">Send</button>
+    <button id="roleToggle" class="role-toggle" title="Toggle role">Debug</button>
   </div>
 </div>
 
@@ -167,14 +193,11 @@
   const messageInput = document.getElementById('messageInput');
   const sendButton = document.getElementById('sendButton');
   const roleToggle = document.getElementById('roleToggle');
-  let modifiedHtml;
+  const imageInput = document.getElementById('imageInput');
+  const uploadIcon = document.querySelector('label[for="imageInput"]');
   let isRight = true;
+  let previousFile = null; // 用于存储之前上传的文件
 
-  /**
-   * 为 HTML 字符串中的 body 样式添加前缀 .my-chart-wrapper
-   * @param {string} htmlString - 输入的 HTML 字符串
-   * @returns {string} - 修改后的 HTML 字符串
-   */
   function addPrefixToBodyStyles(htmlString) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(htmlString, 'text/html');
@@ -185,13 +208,24 @@
     return doc.documentElement.outerHTML;
   }
 
-  /**
-   * 创建消息元素
-   * @param {string} text - 消息内容
-   * @param {boolean} isUser - 是否是用户消息
-   * @returns {HTMLElement} - 消息元素
-   */
-  function createMessageElement(text, isUser) {
+  uploadIcon.addEventListener('click', (event) => {
+    event.preventDefault(); // 阻止默认事件
+    imageInput.click(); // 触发文件选择对话框
+  });
+
+  imageInput.addEventListener('change', (event) => {
+    const previousFile = event.target.files[0]; // 存储当前上传的文件
+    if (previousFile) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const base64Image = e.target.result; // 获取 Base64 字符串
+            localStorage.setItem('uploadedImage', base64Image); // 存储 Base64 图像
+        };
+        reader.readAsDataURL(previousFile); // 将文件读取为 Data URL
+    }
+});
+
+  function createMessageElement(text, image, isUser) {
     const messageElement = document.createElement('div');
     messageElement.classList.add('message', isUser ? 'right' : 'left');
 
@@ -200,11 +234,14 @@
     iconElement.textContent = isUser ? '💬' : '🤖';
 
     if (isUser) {
+      const imageElement = document.createElement('img');
+      imageElement.src = URL.createObjectURL(image);
+      imageElement.classList.add('image-preview');
+      messageElement.appendChild(imageElement);
       const textElement = document.createElement('div');
       textElement.classList.add('text');
       textElement.textContent = text;
       messageElement.appendChild(textElement);
-      messageElement.appendChild(iconElement);
     } else {
       const iframeElement = document.createElement('iframe');
       iframeElement.classList.add('text');
@@ -225,31 +262,47 @@
       messageElement.appendChild(iframeElement);
     }
 
+
+
+    messageElement.appendChild(iconElement);
     return messageElement;
   }
 
   sendButton.addEventListener('click', async () => {
     const messageText = messageInput.value.trim();
-    if (!messageText) return;
+    const file = imageInput.files[0] || previousFile; // 使用当前文件或之前的文件
 
-    const userMessage = createMessageElement(messageText, isRight);
+    if (!messageText && !file) return; // 没有文本和文件时不发送
+
+    const userMessage = createMessageElement(messageText, file, isRight);
     messagesContainer.appendChild(userMessage);
+
+    // Scroll to the bottom
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
     messagesContainer.classList.add('has-content');
+
+    // 清空输入
     messageInput.value = '';
+    imageInput.value = ''; // 清空文件输入
+    previousFile = file ? file : null; // 更新之前上传的文件
 
     if (isRight) {
-      // 与后端通信
       try {
-        const response = await fetch('/send_message', {
+        // Prepare data to be sent
+        const formData = new FormData();
+        formData.append('message', messageText);
+        if (file) {
+          formData.append('image', file);
+        }
+
+        const response = await fetch('/generate_ui', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: messageText }),
+          body: formData,
         });
 
         const data = await response.json();
         if (data.response) {
-          const botMessage = createMessageElement(data.response, !isRight);
+          const botMessage = createMessageElement(data.response, null, !isRight);
           messagesContainer.appendChild(botMessage);
           messagesContainer.scrollTop = messagesContainer.scrollHeight;
         }
@@ -268,9 +321,6 @@
     updateRoleToggleButton();
   });
 
-  /**
-   * 更新角色切换按钮的样式和图标
-   */
   function updateRoleToggleButton() {
     if (isRight) {
       roleToggle.style.backgroundColor = '#007bff';
@@ -283,9 +333,7 @@
     }
   }
 
-  // 初始化角色切换按钮
   updateRoleToggleButton();
-
 </script>
 </body>
 </html>

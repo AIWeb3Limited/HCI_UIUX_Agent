@@ -6,6 +6,8 @@ import time
 def message_template(role,new_info):
     new_dict={'role':role,'content':new_info}
     return new_dict
+
+
 def api_answer(messages,mode=""):
     conn = http.client.HTTPSConnection("api.openai-hub.com")
     headers = {
@@ -25,10 +27,6 @@ def api_answer(messages,mode=""):
             "messages": messages,
 
         })
-    # conn.request("POST", "/v1/chat/completions", payload, headers)
-    # res = conn.getresponse()
-    # data = res.read()
-    # result = json.loads(data.decode("utf-8"))
 
     MAX_RETRIES = 3  # 最大重试次数
     RETRY_DELAY = 2  # 重试间隔（秒）
@@ -39,11 +37,8 @@ def api_answer(messages,mode=""):
             res = conn.getresponse()
             data = res.read()
             result = json.loads(data.decode("utf-8"))
-
-            print(result)
             return result["choices"][0]["message"]["content"]
-
-            # break  # 成功后退出循环
+        
         except TimeoutError:
             print(f"请求超时，正在重试...（第 {attempt} 次尝试）")
             if attempt == MAX_RETRIES:
