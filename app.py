@@ -285,9 +285,7 @@ def recolor():
         result_hsv = cv2.merge([new_h, new_s, new_v])
         result_bgr = cv2.cvtColor(result_hsv, cv2.COLOR_HSV2BGR)
 
-    output_path = 'modified_image.jpg' 
-    cv2.imwrite(output_path, result_bgr)
-
+    cv2.imwrite("recolor.jpg", result_bgr)
     _, buffer = cv2.imencode('.jpg', result_bgr)
     encoded_image = base64.b64encode(buffer).decode('utf-8')
     response = {
@@ -313,9 +311,10 @@ def brightness():
     enhancer = ImageEnhance.Brightness(image)
     image_adjusted = enhancer.enhance(ad_value)
     buffered = BytesIO()
-    encoded_image = base64.b64encode(buffered.getvalue()).decode('utf-8')
     image_adjusted.save(buffered, format="JPEG")
     image_adjusted.save("brightness.jpg", format="JPEG")
+    buffered.seek(0)
+    encoded_image = base64.b64encode(buffered.getvalue()).decode('utf-8')
     response = {
         "modified_image": f"data:image/jpeg;base64,{encoded_image}"
     }
@@ -359,6 +358,7 @@ def brightness():
 
 @app.route('/generate_ui', methods=['POST'])
 def generate_ui():
+    session['ui_messages'] = []
     user_message = request.form['message']
     image = request.files['image']
     result = option(user_message)
@@ -367,18 +367,18 @@ def generate_ui():
     adjustment_options = result["Adjustment Options"]
     system_prompt = f"""
         **Instructions**:
-        You are an expert UI design assistant specialized in generating aesthetically pleasing, simple, 
+        You are an expert UI design assistant specialized in generating aesthetically pleasing, simple, direct,
         and user-friendly HTML pages tailored to specific image editing tasks as per user requests. 
         Your task is to generate complete, functional HTML code embedded with CSS and JavaScript based on the individual needs of each user.
 
         **Guidelines**:
         1. The layout should be intuitive and clear, facilitating quick familiarity and ease of use for users.
-        2. For the operation '{adjustment_type}, decide on the most suitable form of interactive elements (such as sliders, color pickers, etc.) that best facilitate user interaction and achieve the desired effect. Use the provided adjustment options: {adjustment_options}.
+        2. For the operation '{adjustment_type}, decide on the most suitable form of interactive elements (such as sliders, color pickers, etc.) that best facilitate user interaction and achieve the desired effect. Use the provided adjustment options: {adjustment_options}. All necessary controls should be directly visible and accessible within the page. If a slider is generated, ensure it allows continuous adjustment by providing appropriate min, max, and step values.
         3. Adopt a minimalist and modern design style, with harmonious color schemes and avoid overly complex or harsh designs.
         4. Make sure all interactive elements (buttons, sliders, etc.) are highly clickable and responsive.
         5. Ensure the generated HTML code is well-structured, with clear comments to facilitate future maintenance.
         6. The HTML should read the image from localStorage, specifically searching for the key "uploadedImage". It should call the appropriate API endpoint based on the operation performed by the user. The API endpoint name is constructed by adding a forward slash before the adjustment type, e.g., '/{adjustment_type}'. Use the keys: image, ObjectClass ({object_class}), and AdjustmentValue, where AdjustmentValue corresponds to the value selected by the user for the operation. The API response will be in the form: response = {{ "modified_image": "data:image/jpeg;base64,{{encoded_image}}" }}, and you need to use the modified_image field to display the result.
-        7. The layout should be in a **left-aligned**, chat-like format, ensuring it is not overly large, with the parent container size not exceeding **500px** but also sized adequately to accommodate the image. The page should always display only one image at a time.
+        7. The layout should be in a **left-aligned**, chat-like format, ensuring it is not overly large, with the parent container size not exceeding **500px** but also sized adequately to accommodate the image. Only **one image** should be displayed at a time, and this image should always be shown in the same position within the layout.
         8. Provide only the HTML code as output without any additional text or explanation.
 
         Please adhere to the above guidelines to generate the HTML page code specifically for this user instruction: {user_message}
