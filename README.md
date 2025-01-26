@@ -1,1 +1,1 @@
-"# dynamic_ui" 
+# dynamic UI generation for AIGC
