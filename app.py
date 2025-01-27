@@ -29,10 +29,10 @@ Session(app)
 
 # GroundingDINO+SAM configuration
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-GROUNDING_DINO_CONFIG_PATH = r"C:\Users\admin\Downloads\ground\GroundingDINO\groundingdino\config\GroundingDINO_SwinT_OGC.py"
-GROUNDING_DINO_CHECKPOINT_PATH = r"C:\Users\admin\Downloads\groundingdino_swint_ogc.pth"
+GROUNDING_DINO_CONFIG_PATH = "../Grounded-Segment-Anything/GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py"
+GROUNDING_DINO_CHECKPOINT_PATH = "../CCA/checkpoints/groundingdino_swint_ogc.pth"
 SAM_ENCODER_VERSION = "vit_h"
-SAM_CHECKPOINT_PATH = r"C:\Users\admin\Downloads\sam_vit_h_4b8939.pth"
+SAM_CHECKPOINT_PATH = "../Grounded-Segment-Anything/sam_vit_h_4b8939.pth"
 grounding_dino_model = Model(model_config_path=GROUNDING_DINO_CONFIG_PATH, model_checkpoint_path=GROUNDING_DINO_CHECKPOINT_PATH)
 sam = sam_model_registry[SAM_ENCODER_VERSION](checkpoint=SAM_CHECKPOINT_PATH)
 sam.to(device=DEVICE)
@@ -40,6 +40,7 @@ sam_predictor = SamPredictor(sam)
 BOX_THRESHOLD = 0.35
 TEXT_THRESHOLD = 0.35
 NMS_THRESHOLD = 0.82
+
 
 def segment(sam_predictor: SamPredictor, image: np.ndarray, xyxy: np.ndarray) -> np.ndarray:
     sam_predictor.set_image(image)
@@ -117,6 +118,8 @@ def initialize_session():
     session['data_agent_messages'] = []  # Initialize an empty list for messages
     session['data_agent_replacements_json']= []  # Initialize an empty list for messages
     # session['data_agent_messages'].append(message_template('system',system_prompt))# 
+
+
 @app.route('/')
 def index():
     session.clear()  # 清除会话数据
@@ -181,7 +184,6 @@ def hex_to_rgb(hex_color):
     r = int(hex_color[0:2], 16)
     g = int(hex_color[2:4], 16)
     b = int(hex_color[4:6], 16)
-
     return [r, g, b]
 
 
@@ -259,6 +261,60 @@ def brightness():
     return jsonify(response)
 
 
+@app.route('/contrast', methods=['POST'])
+def contrast():
+    data = request.get_json()
+    image_data = data['image']
+    ad_value = float(data['AdjustmentValue'])  # Contrast adjustment value
+    if image_data.startswith('data:image/png;base64,'):
+        header, base64_data = image_data.split(',', 1)
+    elif image_data.startswith('data:image/jpeg;base64,'):
+        header, base64_data = image_data.split(',', 1)
+    else:
+        return "Invalid image format", 400
+    image = base64.b64decode(base64_data)
+    image = Image.open(BytesIO(image))
+    enhancer = ImageEnhance.Contrast(image)
+    image_adjusted = enhancer.enhance(ad_value)
+    buffered = BytesIO()
+    image_adjusted.save(buffered, format="JPEG")
+    image_adjusted.save("contrast.jpg", format="JPEG")
+    buffered.seek(0)
+    encoded_image = base64.b64encode(buffered.getvalue()).decode('utf-8')
+    response = {
+        "modified_image": f"data:image/jpeg;base64,{encoded_image}"
+    }
+
+    return jsonify(response)
+
+
+@app.route('/saturation', methods=['POST'])
+def saturation():
+    data = request.get_json()
+    image_data = data['image']
+    ad_value = float(data['AdjustmentValue'])  # Saturation adjustment value
+    if image_data.startswith('data:image/png;base64,'):
+        header, base64_data = image_data.split(',', 1)
+    elif image_data.startswith('data:image/jpeg;base64,'):
+        header, base64_data = image_data.split(',', 1)
+    else:
+        return "Invalid image format", 400
+    image = base64.b64decode(base64_data)
+    image = Image.open(BytesIO(image))
+    enhancer = ImageEnhance.Color(image) 
+    image_adjusted = enhancer.enhance(ad_value)
+    buffered = BytesIO()
+    image_adjusted.save(buffered, format="JPEG")
+    image_adjusted.save("saturation.jpg", format="JPEG")
+    buffered.seek(0)
+    encoded_image = base64.b64encode(buffered.getvalue()).decode('utf-8')
+    response = {
+        "modified_image": f"data:image/jpeg;base64,{encoded_image}"
+    }
+
+    return jsonify(response)
+
+
 @app.route('/generate_ui', methods=['POST'])
 def generate_ui():
     session['ui_messages'] = []
@@ -267,11 +323,7 @@ def generate_ui():
         image = request.files['image']
     except:
         image=None
-    print('image',image)
     if image:
-        
-
-
         result = option(user_message)
         adjustment_type = result["Adjustment Type"]
         object_class = result.get("Object Class", None)
@@ -284,7 +336,7 @@ def generate_ui():
     
             **Guidelines**:
             1. The layout should be intuitive and clear, facilitating quick familiarity and ease of use for users.
-            2. For the operation '{adjustment_type}, decide on the most suitable form of interactive elements (such as sliders, color pickers, etc.) that best facilitate user interaction and achieve the desired effect. Use the provided adjustment options: {adjustment_options}. All necessary controls should be directly visible and accessible within the page. If a slider is generated, ensure it allows continuous adjustment by providing appropriate min, max, and step values.
+            2. For the operation '{adjustment_type}', decide on the most suitable form of interactive elements (such as sliders, color pickers, etc.) that best facilitate user interaction and achieve the desired effect. Avoid using dropdowns and text inputs as much as possible to ensure all elements are directly visible and intuitive to use. Use the provided adjustment options: {adjustment_options}. All necessary controls should be directly visible and accessible within the page. If a slider is generated, ensure it allows continuous adjustment by providing appropriate min, max, and step values.
             3. Adopt a minimalist and modern design style, with harmonious color schemes and avoid overly complex or harsh designs.
             4. Make sure all interactive elements (buttons, sliders, etc.) are highly clickable and responsive.
             5. Ensure the generated HTML code is well-structured, with clear comments to facilitate future maintenance.
@@ -302,7 +354,6 @@ def generate_ui():
         session['data_agent_messages'].append(message_template('assistant', html_template))
         ui_response = process_symbol(response_message)
 
-    print(ui_response)
     return jsonify({'response': ui_response})
 
 
