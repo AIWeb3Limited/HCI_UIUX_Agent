@@ -1,14 +1,10 @@
 # HCI_UIUX_Agent
 ## Introduction
 ### AIGC Task
-This project focuses on delivering advanced image editing functionalities within the AIGC domain, specifically designed for tasks requiring precision and user-friendly interaction. A key feature of this system is its ability to **dynamically generate intuitive and user-friendly interfaces** tailored to each editing task. This system supports **localized recoloring** along with adjustments to **brightness**, **contrast**, **saturation**, and other essential image properties. The following video demonstrates the system's capabilities:
+This project focuses on delivering advanced image editing functionalities within the AIGC domain, specifically designed for tasks requiring precision and user-friendly interaction. A key feature of this system is its ability to **dynamically generate intuitive and user-friendly interfaces** tailored to each editing task. This system supports **localized recoloring** along with adjustments to **brightness**, **contrast**, **saturation**, and other essential image properties. Please click [here](https://github.com/AIWeb3Limited/HCI_UIUX_Agent/blob/main/demo_aigc.mp4) to watch the demo video.
 
-<div style="display: flex; justify-content: center; align-items: center; width: 100%; height: vh;">
-  <video style="width: 90%; height: auto;" controls>
-    <source src="demo_aigc.mp4" type="video/mp4">
-    Your browser does not support the video tag.
-  </video>
-</div>
+![aigc_ui](https://github.com/AIWeb3Limited/HCI_UIUX_Agent/blob/main/aigc_ui_example.jpeg)
+
 
 ## Setup
 1. git clone repo.
