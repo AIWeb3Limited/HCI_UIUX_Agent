@@ -15,6 +15,7 @@ from groundingdino.util.inference import Model
 from segment_anything import sam_model_registry, SamPredictor
 import base64
 from io import BytesIO
+from agent_workflow import *
 
 
 prev_object_class = None
@@ -109,10 +110,13 @@ def process_message(message):
 def initialize_session():
     if 'option_messages' not in session:
         session['option_messages'] = []  
-    if 'ui_messages' not in session:
-        session['ui_messages'] = []  
-
-
+    # if 'ui_messages' not in session:
+    #     session['ui_messages'] = []  
+        
+    session['ui_messages'] = []  
+    session['data_agent_messages'] = []  # Initialize an empty list for messages
+    session['data_agent_replacements_json']= []  # Initialize an empty list for messages
+    # session['data_agent_messages'].append(message_template('system',system_prompt))# 
 @app.route('/')
 def index():
     session.clear()  # 清除会话数据
@@ -259,35 +263,45 @@ def brightness():
 def generate_ui():
     session['ui_messages'] = []
     user_message = request.form['message']
-    image = request.files['image']
+    try:
+        image = request.files['image']
+    except:
+        image=None
     print('image',image)
+    if image:
+        
 
 
-    result = option(user_message)
-    adjustment_type = result["Adjustment Type"]
-    object_class = result.get("Object Class", None)
-    adjustment_options = result["Adjustment Options"]
-    system_prompt = f"""
-        **Instructions**:
-        You are an expert UI design assistant specialized in generating aesthetically pleasing, simple, direct,
-        and user-friendly HTML pages tailored to specific image editing tasks as per user requests. 
-        Your task is to generate complete, functional HTML code embedded with CSS and JavaScript based on the individual needs of each user.
+        result = option(user_message)
+        adjustment_type = result["Adjustment Type"]
+        object_class = result.get("Object Class", None)
+        adjustment_options = result["Adjustment Options"]
+        system_prompt = f"""
+            **Instructions**:
+            You are an expert UI design assistant specialized in generating aesthetically pleasing, simple, direct,
+            and user-friendly HTML pages tailored to specific image editing tasks as per user requests. 
+            Your task is to generate complete, functional HTML code embedded with CSS and JavaScript based on the individual needs of each user.
+    
+            **Guidelines**:
+            1. The layout should be intuitive and clear, facilitating quick familiarity and ease of use for users.
+            2. For the operation '{adjustment_type}, decide on the most suitable form of interactive elements (such as sliders, color pickers, etc.) that best facilitate user interaction and achieve the desired effect. Use the provided adjustment options: {adjustment_options}. All necessary controls should be directly visible and accessible within the page. If a slider is generated, ensure it allows continuous adjustment by providing appropriate min, max, and step values.
+            3. Adopt a minimalist and modern design style, with harmonious color schemes and avoid overly complex or harsh designs.
+            4. Make sure all interactive elements (buttons, sliders, etc.) are highly clickable and responsive.
+            5. Ensure the generated HTML code is well-structured, with clear comments to facilitate future maintenance.
+            6. The HTML should read the image from localStorage, specifically searching for the key "uploadedImage". It should call the appropriate API endpoint based on the operation performed by the user. The API endpoint name is constructed by adding a forward slash before the adjustment type, e.g., '/{adjustment_type}'. Use the keys: image, ObjectClass ({object_class}), and AdjustmentValue, where AdjustmentValue corresponds to the value selected by the user for the operation. The API response will be in the form: response = {{ "modified_image": "data:image/jpeg;base64,{{encoded_image}}" }}, and you need to use the modified_image field to display the result.
+            7. The layout should be in a **left-aligned**, chat-like format, ensuring it is not overly large, with the parent container size not exceeding **500px** but also sized adequately to accommodate the image. Only **one image** should be displayed at a time, and this image should always be shown in the same position within the layout.
+            8. Provide only the HTML code as output without any additional text or explanation.
+    
+            Please adhere to the above guidelines to generate the HTML page code specifically for this user instruction: {user_message}
+        """
+        session['ui_messages'].append(message_template('system', system_prompt))
+        session['ui_messages'].append(message_template('user', "generate the appropriate UI"))
+        ui_response = process_symbol(api_answer(session['ui_messages']))
+    else:
+        response_message, html_template, session['data_agent_replacements_json']= generate_response(user_message)
+        session['data_agent_messages'].append(message_template('assistant', html_template))
+        ui_response = process_symbol(response_message)
 
-        **Guidelines**:
-        1. The layout should be intuitive and clear, facilitating quick familiarity and ease of use for users.
-        2. For the operation '{adjustment_type}, decide on the most suitable form of interactive elements (such as sliders, color pickers, etc.) that best facilitate user interaction and achieve the desired effect. Use the provided adjustment options: {adjustment_options}. All necessary controls should be directly visible and accessible within the page. If a slider is generated, ensure it allows continuous adjustment by providing appropriate min, max, and step values.
-        3. Adopt a minimalist and modern design style, with harmonious color schemes and avoid overly complex or harsh designs.
-        4. Make sure all interactive elements (buttons, sliders, etc.) are highly clickable and responsive.
-        5. Ensure the generated HTML code is well-structured, with clear comments to facilitate future maintenance.
-        6. The HTML should read the image from localStorage, specifically searching for the key "uploadedImage". It should call the appropriate API endpoint based on the operation performed by the user. The API endpoint name is constructed by adding a forward slash before the adjustment type, e.g., '/{adjustment_type}'. Use the keys: image, ObjectClass ({object_class}), and AdjustmentValue, where AdjustmentValue corresponds to the value selected by the user for the operation. The API response will be in the form: response = {{ "modified_image": "data:image/jpeg;base64,{{encoded_image}}" }}, and you need to use the modified_image field to display the result.
-        7. The layout should be in a **left-aligned**, chat-like format, ensuring it is not overly large, with the parent container size not exceeding **500px** but also sized adequately to accommodate the image. Only **one image** should be displayed at a time, and this image should always be shown in the same position within the layout.
-        8. Provide only the HTML code as output without any additional text or explanation.
-
-        Please adhere to the above guidelines to generate the HTML page code specifically for this user instruction: {user_message}
-    """
-    session['ui_messages'].append(message_template('system', system_prompt))
-    session['ui_messages'].append(message_template('user', "generate the appropriate UI"))
-    ui_response = process_symbol(api_answer(session['ui_messages']))
     print(ui_response)
     return jsonify({'response': ui_response})
 

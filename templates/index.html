@@ -1,339 +1,355 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Chat Page</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 0;
-      padding: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      background-color: #f4f4f4;
-      height: 100vh;
-    }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Page</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f4f4f4;
+            height: 100vh;
+        }
 
-    .chat-container {
-      width: calc(100vw - 20px);
-      height: calc(100vh - 20px);
-      margin: 10px 0;
-      background-color: #ffffff;
-      border: 1px solid #ccc;
-      border-radius: 10px;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-    }
+        .chat-container {
+            width: calc(100vw - 20px);
+            height: calc(100vh - 20px);
+            margin: 10px 0;
+            background-color: #ffffff;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
 
-    .messages {
-      flex: 1;
-      padding: 20px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      position: relative;
-    }
+        .messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
 
-    .messages::before {
-      content: '\1F60A';
-      font-size: 48px;
-      color: #ddd;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      width: 100%;
-      position: absolute;
-      top: 0;
-      left: 0;
-      pointer-events: none;
-    }
+        .messages::before {
+            content: '\1F60A';
+            font-size: 48px;
+            color: #ddd;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            width: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+        }
 
-    .messages.has-content::before {
-      display: none;
-    }
+        .messages.has-content::before {
+            display: none;
+        }
 
-    .message {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      margin-bottom: 15px;
-    }
+        .message {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            margin-bottom: 15px;
+        }
 
-    .message:first-child {
-      margin-top: 10px;
-    }
+        .message:first-child {
+            margin-top: 10px;
+        }
 
-    .message.right {
-      align-items: flex-end;
-    }
+        .message.right {
+            align-items: flex-end;
+        }
 
-    .message .icon {
-      width: 40px;
-      height: 40px;
-      border-radius: 50%;
-      background-color: #ddd;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: bold;
-      flex-shrink: 0;
-      flex-grow: 0;
-    }
+        .message .icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background-color: #ddd;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            flex-shrink: 0;
+            flex-grow: 0;
+        }
 
-    .message .text {
-      background-color: #e0e0e0;
-      border-radius: 15px;
-      padding: 10px 15px;
-      max-width: 100%;
-      word-wrap: break-word;
-      margin-top: 10px;
-    }
+        .message .text {
+            background-color: #e0e0e0;
+            border-radius: 15px;
+            padding: 10px 15px;
+            max-width: 100%;
+            word-wrap: break-word;
+            margin-top: 10px;
+        }
 
-    .message.left .text {
-      background-color: #ffffff;
-      border: 1px solid #ccc;
-    }
+        .message.left .text {
+            background-color: #ffffff;
+            border: 1px solid #ccc;
+        }
 
-    .controls {
-      display: flex;
-      align-items: center;
-      padding: 10px;
-      border-top: 1px solid #ccc;
-      background-color: #f8f9fa;
-    }
+        .controls {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            border-top: 1px solid #ccc;
+            background-color: #f8f9fa;
+        }
 
-    .controls input[type="text"] {
-      flex: 1;
-      padding: 10px;
-      margin-right: 10px;
-      border: 1px solid #ccc;
-      border-radius: 5px;
-      transition: border-color 0.3s;
-    }
+        .controls input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            margin-right: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            transition: border-color 0.3s;
+        }
 
-    .controls input[type="file"] {
-      display: none;
-    }
+        .controls input[type="file"] {
+            display: none;
+        }
 
-    .upload-icon {
-      width: 40px;
-      height: 40px;
-      background-color: #007bff;
-      color: white;
-      border-radius: 5px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      margin-right: 10px;
-      transition: background-color 0.3s;
-    }
+        .upload-icon {
+            width: 40px;
+            height: 40px;
+            background-color: #007bff;
+            color: white;
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            margin-right: 10px;
+            transition: background-color 0.3s;
+        }
 
-    .upload-icon:hover {
-      background-color: #0056b3;
-    }
+        .upload-icon:hover {
+            background-color: #0056b3;
+        }
 
-    .controls button {
-      padding: 10px 15px;
-      border: none;
-      border-radius: 5px;
-      background-color: #007bff;
-      color: white;
-      cursor: pointer;
-      transition: background-color 0.3s;
-    }
+        .controls button {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 5px;
+            background-color: #007bff;
+            color: white;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
 
-    .controls button:hover {
-      background-color: #0056b3;
-    }
+        .controls button:hover {
+            background-color: #0056b3;
+        }
 
-    .role-toggle {
-      margin-left: 10px;
-      padding: 10px;
-      border: none;
-      border-radius: 5px;
-      background-color: #28a745;
-      color: white;
-      cursor: pointer;
-      transition: background-color 0.3s;
-    }
+        .role-toggle {
+            margin-left: 10px;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            background-color: #28a745;
+            color: white;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
 
-    .role-toggle:hover {
-      background-color: #218838;
-    }
+        .role-toggle:hover {
+            background-color: #218838;
+        }
 
-    .image-preview {
-      max-width: 200px;
-      max-height: 200px;
-      border-radius: 10px;
-      margin-top: 10px;
-    }
-  </style>
+        .image-preview {
+            max-width: 200px;
+            max-height: 200px;
+            border-radius: 10px;
+            margin-top: 10px;
+        }
+    </style>
 </head>
 <body>
 <div class="chat-container">
-  <div class="messages" id="messages">
-    <!-- Messages will be appended here -->
-  </div>
-  <div class="controls">
-    <label for="imageInput" class="upload-icon" title="Upload Image">➕</label>
-    <input type="file" id="imageInput" accept="image/*" title="Choose an image">
-    <input type="text" id="messageInput" placeholder="Type your message..." title="Type your message">
-    <button id="sendButton" title="Send message">Send</button>
-    <button id="roleToggle" class="role-toggle" title="Toggle role">Debug</button>
-  </div>
+    <div class="messages" id="messages">
+        <!-- Messages will be appended here -->
+    </div>
+    <div class="controls">
+        <label for="imageInput" class="upload-icon" title="Upload Image">➕</label>
+        <input type="file" id="imageInput" accept="image/*" title="Choose an image">
+        <input type="text" id="messageInput" placeholder="Type your message..." title="Type your message">
+        <button id="sendButton" title="Send message">Send</button>
+        <button id="roleToggle" class="role-toggle" title="Toggle role">Debug</button>
+    </div>
 </div>
 
 <script>
-  const messagesContainer = document.getElementById('messages');
-  const messageInput = document.getElementById('messageInput');
-  const sendButton = document.getElementById('sendButton');
-  const roleToggle = document.getElementById('roleToggle');
-  const imageInput = document.getElementById('imageInput');
-  const uploadIcon = document.querySelector('label[for="imageInput"]');
-  let isRight = true;
-  let previousFile = null; // 用于存储之前上传的文件
+    const messagesContainer = document.getElementById('messages');
+    const messageInput = document.getElementById('messageInput');
+    const sendButton = document.getElementById('sendButton');
+    const roleToggle = document.getElementById('roleToggle');
+    const imageInput = document.getElementById('imageInput');
+    const uploadIcon = document.querySelector('label[for="imageInput"]');
+    let isRight = true;
+    let previousFile = null; // 用于存储之前上传的文件
 
-  function addPrefixToBodyStyles(htmlString) {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(htmlString, 'text/html');
-    doc.querySelectorAll('style').forEach(styleTag => {
-      const bodySelectorRegex = /(^|,|\s)body(\b|[^a-zA-Z0-9_-])/g;
-      styleTag.textContent = styleTag.textContent.replace(bodySelectorRegex, `$1.my-chart-wrapper body$2`);
-    });
-    return doc.documentElement.outerHTML;
-  }
-
-  uploadIcon.addEventListener('click', (event) => {
-    event.preventDefault(); // 阻止默认事件
-    imageInput.click(); // 触发文件选择对话框
-  });
-
-  imageInput.addEventListener('change', (event) => {
-    const previousFile = event.target.files[0]; // 存储当前上传的文件
-    if (previousFile) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const base64Image = e.target.result; // 获取 Base64 字符串
-            localStorage.setItem('uploadedImage', base64Image); // 存储 Base64 图像
-        };
-        reader.readAsDataURL(previousFile); // 将文件读取为 Data URL
-    }
-});
-
-  function createMessageElement(text, image, isUser) {
-    const messageElement = document.createElement('div');
-    messageElement.classList.add('message', isUser ? 'right' : 'left');
-
-    const iconElement = document.createElement('div');
-    iconElement.classList.add('icon');
-    iconElement.textContent = isUser ? '💬' : '🤖';
-
-    if (isUser) {
-      const imageElement = document.createElement('img');
-      imageElement.src = URL.createObjectURL(image);
-      imageElement.classList.add('image-preview');
-      messageElement.appendChild(imageElement);
-      const textElement = document.createElement('div');
-      textElement.classList.add('text');
-      textElement.textContent = text;
-      messageElement.appendChild(textElement);
-    } else {
-      const iframeElement = document.createElement('iframe');
-      iframeElement.classList.add('text');
-      iframeElement.srcdoc = addPrefixToBodyStyles(text);
-      iframeElement.style.border = 'none';
-      iframeElement.style.width = '50%';
-      iframeElement.style.overflow = 'hidden';
-      iframeElement.scrolling = 'no';
-      iframeElement.onload = function() {
-        try {
-          const iframeDocument = iframeElement.contentDocument || iframeElement.contentWindow.document;
-          iframeElement.style.height = iframeDocument.body.scrollHeight +70 + 'px';
-        } catch (e) {
-          console.error('无法访问 iframe 内容以调整高度:', e);
-        }
-      };
-      messageElement.appendChild(iconElement);
-      messageElement.appendChild(iframeElement);
-    }
-
-
-
-    messageElement.appendChild(iconElement);
-    return messageElement;
-  }
-
-  sendButton.addEventListener('click', async () => {
-    const messageText = messageInput.value.trim();
-    const file = imageInput.files[0] || previousFile; // 使用当前文件或之前的文件
-
-    if (!messageText && !file) return; // 没有文本和文件时不发送
-
-    const userMessage = createMessageElement(messageText, file, isRight);
-    messagesContainer.appendChild(userMessage);
-
-    // Scroll to the bottom
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    messagesContainer.classList.add('has-content');
-
-    // 清空输入
-    messageInput.value = '';
-    imageInput.value = ''; // 清空文件输入
-    previousFile = file ? file : null; // 更新之前上传的文件
-
-    if (isRight) {
-      try {
-        // Prepare data to be sent
-        const formData = new FormData();
-        formData.append('message', messageText);
-        if (file) {
-          formData.append('image', file);
-        }
-
-        const response = await fetch('/generate_ui', {
-          method: 'POST',
-          body: formData,
+    function addPrefixToBodyStyles(htmlString) {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(htmlString, 'text/html');
+        doc.querySelectorAll('style').forEach(styleTag => {
+            const bodySelectorRegex = /(^|,|\s)body(\b|[^a-zA-Z0-9_-])/g;
+            styleTag.textContent = styleTag.textContent.replace(bodySelectorRegex, `$1.my-chart-wrapper body$2`);
         });
+        return doc.documentElement.outerHTML;
+    }
 
-        const data = await response.json();
-        if (data.response) {
-          const botMessage = createMessageElement(data.response, null, !isRight);
-          messagesContainer.appendChild(botMessage);
-          messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    uploadIcon.addEventListener('click', (event) => {
+        event.preventDefault(); // 阻止默认事件
+        imageInput.click(); // 触发文件选择对话框
+    });
+
+    imageInput.addEventListener('change', (event) => {
+        const previousFile = event.target.files[0]; // 存储当前上传的文件
+        if (previousFile) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const base64Image = e.target.result; // 获取 Base64 字符串
+                localStorage.setItem('uploadedImage', base64Image); // 存储 Base64 图像
+            };
+            reader.readAsDataURL(previousFile); // 将文件读取为 Data URL
         }
-      } catch (error) {
-        console.error('与服务器通信时出错:', error);
-      }
+    });
+
+    function createMessageElement(text, image, isUser) {
+        console.log(text)
+        console.log(isUser)
+        console.log(image)
+        const messageElement = document.createElement('div');
+        messageElement.classList.add('message', isUser ? 'right' : 'left');
+
+        const iconElement = document.createElement('div');
+        iconElement.classList.add('icon');
+        iconElement.textContent = isUser ? '💬' : '🤖';
+
+        if (isUser) {
+            // 如果 image 存在且有效
+            if (image) {
+                try {
+                    const imageElement = document.createElement('img');
+                    imageElement.src = URL.createObjectURL(image); // 创建对象 URL
+                    imageElement.classList.add('image-preview');
+                    messageElement.appendChild(imageElement);
+                    const textElement = document.createElement('div');
+                    textElement.classList.add('text');
+                    textElement.textContent = text;
+                    messageElement.appendChild(textElement);
+                } catch (e) {
+                    console.error('无法创建对象 URL:', e);
+                }
+            }else
+            {
+                const textElement = document.createElement('div');
+                textElement.classList.add('text');
+                textElement.textContent = text;
+                messageElement.appendChild(textElement);
+                messageElement.appendChild(iconElement);
+            }
+
+            // 创建文本元素
+
+        } else {
+            const iframeElement = document.createElement('iframe');
+            iframeElement.classList.add('text');
+            iframeElement.srcdoc = addPrefixToBodyStyles(text);
+            iframeElement.style.border = 'none';
+            iframeElement.style.width = '100%';
+            iframeElement.style.overflow = 'hidden';
+            iframeElement.scrolling = 'no';
+            iframeElement.onload = function() {
+                try {
+                    const iframeDocument = iframeElement.contentDocument || iframeElement.contentWindow.document;
+                    iframeElement.style.height = iframeDocument.body.scrollHeight +70 + 'px';
+                } catch (e) {
+                    console.error('无法访问 iframe 内容以调整高度:', e);
+                }
+            };
+            messageElement.appendChild(iconElement);
+            messageElement.appendChild(iframeElement);
+        }
+
+        return messageElement;
     }
-  });
 
-  messageInput.addEventListener('keypress', (event) => {
-    if (event.key === 'Enter') sendButton.click();
-  });
 
-  roleToggle.addEventListener('click', () => {
-    isRight = !isRight;
+    sendButton.addEventListener('click', async () => {
+        const messageText = messageInput.value.trim();
+        const file = imageInput.files[0] || previousFile; // 使用当前文件或之前的文件
+        // console.log("file",file)
+        // if (!messageText && !file) return; // 没有文本和文件时不发送
+
+        const userMessage = createMessageElement(messageText, file, isRight);
+        messagesContainer.appendChild(userMessage);
+
+        // Scroll to the bottom
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        messagesContainer.classList.add('has-content');
+
+        // 清空输入
+        messageInput.value = '';
+        imageInput.value = ''; // 清空文件输入
+        previousFile = file ? file : null; // 更新之前上传的文件
+
+        if (isRight) {
+            try {
+                // Prepare data to be sent
+                const formData = new FormData();
+                formData.append('message', messageText);
+                formData.append('image', file || null); // 如果没有文件，则设置为 null
+
+                const response = await fetch('/generate_ui', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const data = await response.json();
+                if (data.response) {
+                    const botMessage = createMessageElement(data.response, null, !isRight);
+                    messagesContainer.appendChild(botMessage);
+                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                }
+            } catch (error) {
+                console.error('与服务器通信时出错:', error);
+            }
+        }
+    });
+
+    messageInput.addEventListener('keypress', (event) => {
+        if (event.key === 'Enter') sendButton.click();
+    });
+
+    roleToggle.addEventListener('click', () => {
+        isRight = !isRight;
+        updateRoleToggleButton();
+    });
+
+    function updateRoleToggleButton() {
+        if (isRight) {
+            roleToggle.style.backgroundColor = '#007bff';
+            roleToggle.textContent = '💬';
+            roleToggle.title = '切换到机器人角色';
+        } else {
+            roleToggle.style.backgroundColor = 'red';
+            roleToggle.textContent = '🤖';
+            roleToggle.title = '切换到用户角色';
+        }
+    }
+
     updateRoleToggleButton();
-  });
-
-  function updateRoleToggleButton() {
-    if (isRight) {
-      roleToggle.style.backgroundColor = '#007bff';
-      roleToggle.textContent = '💬';
-      roleToggle.title = '切换到机器人角色';
-    } else {
-      roleToggle.style.backgroundColor = 'red';
-      roleToggle.textContent = '🤖';
-      roleToggle.title = '切换到用户角色';
-    }
-  }
-
-  updateRoleToggleButton();
 </script>
 </body>
 </html>
