@@ -515,174 +515,222 @@ closet_address="""
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nearby Parking Spots</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            background-color: #f8f9fa;
-        }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nearby Parking Spots</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    /* 设置整体背景为渐变色 */
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: linear-gradient(135deg, #ece9e6, #ffffff);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+    }
 
-        .container {
-            width: 90%;
-            max-width: 500px;
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-            overflow: hidden;
-        }
+    /* 毛玻璃效果的容器 */
+    .container {
+      width: 90%;
+      max-width: 500px;
+      background: rgba(255, 255, 255, 0.3);
+      border-radius: 15px;
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      overflow: hidden;
+      margin: 20px;
+    }
 
-        .title {
-            text-align: center;
-            font-size: 18px;
-            font-weight: bold;
-            margin: 10px 0;
-            padding: 5px;
-            background-color: #007bff;
-            color: white;
-        }
+    /* 带毛玻璃效果和阴影的标题 */
+    .title {
+      text-align: center;
+      font-size: 20px;
+      font-weight: bold;
+      margin: 0;
+      padding: 15px;
+      background: rgba(0, 123, 255, 0.6);
+      color: white;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(5px);
+      -webkit-backdrop-filter: blur(5px);
+    }
 
-        #map {
-            height: 300px;
-            width: 100%;
-        }
+    /* 地图容器增加阴影 */
+    #map {
+      height: 300px;
+      width: 100%;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
 
-        .button-container {
-            padding: 10px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            justify-content: center;
-        }
+    /* 按钮容器也使用毛玻璃效果 */
+    .button-container {
+      padding: 15px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.2);
+      backdrop-filter: blur(5px);
+      -webkit-backdrop-filter: blur(5px);
+    }
 
-        .parking-button {
-            padding: 8px 12px;
-            font-size: 12px;
-            border: none;
-            border-radius: 5px;
-            background-color: #007bff;
-            color: white;
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
+    /* 按钮样式，初始背景颜色在 js 中动态赋值 */
+    .parking-button {
+      padding: 10px 16px;
+      font-size: 14px;
+      border: none;
+      border-radius: 8px;
+      color: white;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+      backdrop-filter: blur(5px);
+      -webkit-backdrop-filter: blur(5px);
+    }
 
-        .parking-button:hover {
-            transform: scale(1.05);
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-        }
+    .parking-button:hover {
+      transform: scale(1.05);
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+    }
 
-        .parking-button.active {
-            background-color: #28a745;
-        }
-    </style>
+    .parking-button.active {
+      /* active 状态下的颜色也可以由 js 动态控制 */
+    }
+  </style>
 </head>
 <body>
 
 <div class="container">
-    <div class="title">Nearby Parking Spots</div>
-    <div id="map"></div>
-    <div class="button-container" id="button-container"></div>
+  <div class="title">Nearby Parking Spots</div>
+  <div id="map"></div>
+  <div class="button-container" id="button-container"></div>
 </div>
 
 <script>
+  // 根据 occupancy rate 返回颜色：0为绿色，1为红色（超过1时，按1处理）
+  function occupancyToColor(rate) {
+    const capped = Math.min(rate, 1);
+    const red = Math.floor(capped * 255);
+    const green = Math.floor((1 - capped) * 255);
+    return `rgb(${red}, ${green}, 0)`;
+  }
 
-    const searched_result = [
+  const searched_result = [
+    {
+      'reference_point_name': 'Reference Point',
+      'reference_point_location': {
+        'latitude': 56.18945,
+        'longitude': 10.111042,
+        'address': "b, Tilst Skolevej, unknown house_number"
+      },
+      'nearest_locations': [
         {
-        'reference_point_name': 'Reference Point',
-        'reference_point_location': {
-            'latitude': 56.18945,
-            'longitude': 10.111042
+          'garagecode': 'SCANDCENTER',
+          'latitude': 56.1527,
+          'longitude': 10.197,
+          'occupancy rate': 0.4462609970674487,
+          'distance': 6.727072068746666,
+          'address': "b, Tilst Skolevej, unknown house_number"
         },
-        'nearest_locations': [
-            {
-                'garagecode': 'SCANDCENTER',
-                'latitude': 56.1527,
-                'longitude': 10.197,
-                'occupancy rate': 0.4462609970674487,
-                'distance': 6.727072068746666
-            },
-            {
-                'garagecode': 'MAGASIN',
-                'latitude': 56.15679,
-                'longitude': 10.2049,
-                'occupancy rate': 0.3525,
-                'distance': 6.871065285947375
-            },
-            {
-                'garagecode': 'BUSGADEHUSET',
-                'latitude': 56.15561,
-                'longitude': 10.206,
-                'occupancy rate': 1.1041958041958042,
-                'distance': 6.999054689763466
-            },
-            {
-                'garagecode': 'NORREPORT',
-                'latitude': 56.16184,
-                'longitude': 10.21284,
-                'occupancy rate': 0.0,
-                'distance': 7.030396558719592
-            },
-            {
-                'garagecode': 'SALLING',
-                'latitude': 56.15441,
-                'longitude': 10.20818,
-                'occupancy rate': 0.3041558441558441,
-                'distance': 7.185286613662889
-            }
-        ]
+        {
+          'garagecode': 'MAGASIN',
+          'latitude': 56.15679,
+          'longitude': 10.2049,
+          'occupancy rate': 0.3525,
+          'distance': 6.871065285947375,
+          'address': "b, Tilst Skolevej, unknown house_number"
+        },
+        {
+          'garagecode': 'BUSGADEHUSET',
+          'latitude': 56.15561,
+          'longitude': 10.206,
+          'occupancy rate': 1.1041958041958042,
+          'distance': 6.999054689763466,
+          'address': "b, Tilst Skolevej, unknown house_number"
+        },
+        {
+          'garagecode': 'NORREPORT',
+          'latitude': 56.16184,
+          'longitude': 10.21284,
+          'occupancy rate': 0.0,
+          'distance': 7.030396558719592,
+          'address': "b, Tilst Skolevej, unknown house_number"
+        },
+        {
+          'garagecode': 'SALLING',
+          'latitude': 56.15441,
+          'longitude': 10.20818,
+          'occupancy rate': 0.3041558441558441,
+          'distance': 7.185286613662889,
+          'address': "b, Tilst Skolevej, unknown house_number"
+        }
+      ]
     }
-    ];
-    modified_result=searched_result[0]
-    // Initialize map
-    const map = L.map('map').setView([modified_result.reference_point_location.latitude, modified_result.reference_point_location.longitude], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19
-    }).addTo(map);
+  ];
 
-    // Add reference point marker
-    const referenceMarker = L.marker([modified_result.reference_point_location.latitude, modified_result.reference_point_location.longitude])
-        .addTo(map)
-        .bindPopup(`${modified_result.reference_point_name}`)
-        .openPopup();
+  const modified_result = searched_result[0];
 
-    // Add parking markers
-    const parkingMarkers = [];
-    modified_result.nearest_locations.forEach(location => {
-        const marker = L.marker([location.latitude, location.longitude]).addTo(map)
-            .bindPopup(`${location.garagecode}<br>Occupancy Rate: ${(location['occupancy rate'] * 100).toFixed(2)}%`);
-        parkingMarkers.push(marker);
+  // 初始化地图，设置视图为参考点位置
+  const map = L.map('map').setView(
+    [modified_result.reference_point_location.latitude, modified_result.reference_point_location.longitude],
+    13
+  );
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19
+  }).addTo(map);
+
+  // 添加参考点标记，并在弹出窗口中显示名称和地址信息
+  const referenceMarker = L.marker([
+    modified_result.reference_point_location.latitude,
+    modified_result.reference_point_location.longitude
+  ])
+    .addTo(map)
+    .bindPopup(
+      `${modified_result.reference_point_name}<br>Address: ${modified_result.reference_point_location.address}`
+    )
+    .openPopup();
+
+  // 添加停车场标记，弹出信息中显示车库代码、地址和占用率
+  const parkingMarkers = [];
+  modified_result.nearest_locations.forEach(location => {
+    const marker = L.marker([location.latitude, location.longitude])
+      .addTo(map)
+      .bindPopup(
+        `${location.garagecode}<br>Address: ${location.address}<br>Occupancy Rate: ${(location['occupancy rate'] * 100).toFixed(2)}%`
+      );
+    parkingMarkers.push(marker);
+  });
+
+  // 为每个停车场创建一个按钮，点击后聚焦到相应标记
+  const buttonContainer = document.getElementById('button-container');
+  modified_result.nearest_locations.forEach((location, index) => {
+    const button = document.createElement('button');
+    button.classList.add('parking-button');
+    // 按钮文字显示车库代码和占用率
+    button.textContent = `${location.garagecode} (${(location['occupancy rate'] * 100).toFixed(2)}%)`;
+    // 根据 occupancy rate 动态设置按钮背景颜色
+    button.style.backgroundColor = occupancyToColor(location['occupancy rate']);
+    button.addEventListener('click', () => {
+      map.setView([location.latitude, location.longitude], 16);
+      parkingMarkers.forEach((marker, i) => {
+        if (i === index) {
+          marker.openPopup();
+        } else {
+          marker.closePopup();
+        }
+      });
     });
-
-    // Create buttons
-    const buttonContainer = document.getElementById('button-container');
-    modified_result.nearest_locations.forEach((location, index) => {
-        const button = document.createElement('button');
-        button.classList.add('parking-button');
-        button.textContent = `${location.garagecode} (${(location['occupancy rate'] * 100).toFixed(2)}%)`;
-        button.addEventListener('click', () => {
-            map.setView([location.latitude, location.longitude], 16);
-            parkingMarkers.forEach((marker, i) => {
-                if (i === index) {
-                    marker.openPopup();
-                } else {
-                    marker.closePopup();
-                }
-            });
-        });
-        buttonContainer.appendChild(button);
-    });
+    buttonContainer.appendChild(button);
+  });
 </script>
 
 </body>
 </html>
-
 """
