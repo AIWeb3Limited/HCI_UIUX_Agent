@@ -70,62 +70,62 @@
         .message.right {
             align-items: flex-end;
         }
-    .controls {
-        position: relative;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
+        .controls {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
 
-    /* 缩略图容器：显示在 + 按钮上方 */
-    .thumbnail-container {
-        position: absolute;
-        bottom: 55px; /* 让图片出现在 + 按钮上方 */
-        left: 10px;
-        display: none;
-        padding: 5px;
-        background: rgba(255, 255, 255, 0.9);
-        border-radius: 8px;
-        box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.2);
-    }
+        /* 缩略图容器：显示在 + 按钮上方 */
+        .thumbnail-container {
+            position: absolute;
+            bottom: 55px; /* 让图片出现在 + 按钮上方 */
+            left: 10px;
+            display: none;
+            padding: 5px;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 8px;
+            box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.2);
+        }
 
-    /* 缩略图图片样式 */
-    .thumbnail-image {
-        width: 60px;
-        height: 60px;
-        object-fit: cover;
-        border-radius: 5px;
-        border: 2px solid black; /* 黑色描边 */
-    }
+        /* 缩略图图片样式 */
+        .thumbnail-image {
+            width: 60px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 5px;
+            border: 2px solid black; /* 黑色描边 */
+        }
 
-    /* 删除按钮 */
-    .remove-image {
-        position: absolute;
-        top: -8px;
-        right: -8px;
-        width: 20px;
-        height: 20px;
-        background-color: black;
-        color: white;
-        border: none;
-        border-radius: 50%;
-        font-size: 14px;
-        font-weight: bold;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
+        /* 删除按钮 */
+        .remove-image {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            width: 20px;
+            height: 20px;
+            background-color: black;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
 
-    /* 上传按钮样式 */
-    .upload-icon {
-        font-size: 24px;
-        cursor: pointer;
-        padding: 5px;
-        border: 1px solid #ccc;
-        border-radius: 5px;
-        background: white;
-    }
+        /* 上传按钮样式 */
+        .upload-icon {
+            font-size: 24px;
+            cursor: pointer;
+            padding: 5px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            background: white;
+        }
         .message .icon {
             width: 40px;
             height: 40px;
@@ -227,6 +227,34 @@
             border-radius: 10px;
             margin-top: 10px;
         }
+        .file-preview {
+            position: relative;
+            display: inline-block;
+        }
+
+        .file-icon {
+            font-size: 24px;
+            position: relative;
+        }
+
+        .file-count {
+            position: absolute;
+            top: -8px;
+            left: -8px;
+            background: red;
+            color: white;
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            font-size: 12px;
+            text-align: center;
+            line-height: 16px;
+        }
+
+        .thumbnail-image {
+            max-width: 100px;
+            max-height: 100px;
+        }
     </style>
 </head>
 <body>
@@ -236,11 +264,17 @@
     </div>
     <div class="controls">
         <div class="thumbnail-container" id="thumbnailContainer" style="display: none;">
-            <img id="thumbnailImage" class="thumbnail-image" alt="Uploaded Image">
+            <div class="file-preview">
+                <img id="thumbnailImage" class="thumbnail-image" alt="Uploaded Image" style="display: none;">
+                <div id="fileIcon" class="file-icon" style="display: none;">
+                    <span id="fileCount" class="file-count"></span>
+                    📄
+                </div>
+            </div>
             <button id="removeImage" class="remove-image">×</button>
         </div>
-        <label for="imageInput" class="upload-icon" title="Upload Image">➕</label>
-        <input type="file" id="imageInput" accept="image/*" title="Choose an image" style="display: none;">
+        <label for="imageInput" class="upload-icon" title="Upload Files">➕</label>
+        <input type="file" id="imageInput" accept="image/*,.csv" multiple title="Choose files" style="display: none;">
         <input type="text" id="messageInput" placeholder="Type your message..." title="Type your message">
         <button id="sendButton" title="Send message">Send</button>
         <button id="roleToggle" class="role-toggle" title="Toggle role">Debug</button>
@@ -248,7 +282,7 @@
 </div>
 
 <script>
-       const messagesContainer = document.getElementById('messages');
+    const messagesContainer = document.getElementById('messages');
     const messageInput = document.getElementById('messageInput');
     const sendButton = document.getElementById('sendButton');
     const roleToggle = document.getElementById('roleToggle');
@@ -256,10 +290,12 @@
     const uploadIcon = document.querySelector('label[for="imageInput"]');
     const thumbnailContainer = document.getElementById('thumbnailContainer');
     const thumbnailImage = document.getElementById('thumbnailImage');
+    const fileIcon = document.getElementById('fileIcon');
+    const fileCount = document.getElementById('fileCount');
     const removeImage = document.getElementById('removeImage');
     let isRight = true;
-    let previousFile = null; // 用于存储之前上传的文件
-
+    let uploadedFiles = []; // Store multiple files
+    let previousFile=null
     function addPrefixToBodyStyles(htmlString) {
         const parser = new DOMParser();
         const doc = parser.parseFromString(htmlString, 'text/html');
@@ -271,31 +307,82 @@
     }
 
     uploadIcon.addEventListener('click', (event) => {
-        event.preventDefault(); // 阻止默认事件
-        imageInput.click(); // 触发文件选择对话框
+        event.preventDefault();
+        imageInput.click();
     });
 
     imageInput.addEventListener('change', (event) => {
-        const file = event.target.files[0];
+        const files = Array.from(event.target.files);
 
-        if (file) {
-            previousFile = file; // 存储当前上传的文件
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const base64Image = e.target.result; // 获取 Base64 字符串
-                localStorage.setItem('uploadedImage', base64Image); // 存储 Base64 图像
-                thumbnailImage.src = base64Image; // 显示缩略图
-                thumbnailContainer.style.display = 'inline-block'; // 显示缩略图容器
-            };
-            reader.readAsDataURL(file); // 读取文件为 Data URL
+        if (files.length > 0) {
+            const hasCSV = files.some(file => file.name.toLowerCase().endsWith('.csv'));
+
+            if (!hasCSV && files.length === 1) {
+                // Handle single image file
+                const file = files[0];
+                previousFile = file; // Store current uploaded file
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const base64Image = e.target.result;
+                    localStorage.setItem('uploadedImage', base64Image);
+                    thumbnailImage.src = base64Image;
+                    thumbnailImage.style.display = 'inline-block';
+                    fileIcon.style.display = 'none';
+                    thumbnailContainer.style.display = 'inline-block';
+                };
+                reader.readAsDataURL(file);
+            } else {
+                // Handle multiple files or CSV
+                uploadedFiles = files; // Store all selected files
+                localStorage.setItem('uploadedFilesCount', uploadedFiles.length);
+
+                if (hasCSV) {
+                    // Show file icon for CSV files
+                    fileIcon.style.display = 'inline-block';
+                    fileCount.textContent = uploadedFiles.length;
+                    thumbnailImage.style.display = 'none';
+                } else {
+                    // Show first image preview if multiple images (no CSV)
+                    const firstImage = files.find(file => file.type.startsWith('image/'));
+                    if (firstImage) {
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            thumbnailImage.src = e.target.result;
+                            thumbnailImage.style.display = 'inline-block';
+                            fileIcon.style.display = 'none';
+                        };
+                        reader.readAsDataURL(firstImage);
+                    }
+                }
+
+                thumbnailContainer.style.display = 'inline-block';
+
+                // Store files as base64 in localStorage
+                files.forEach((file, index) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        localStorage.setItem(`uploadedFile_${index}`, e.target.result);
+                    };
+                    reader.readAsDataURL(file);
+                });
+            }
         }
     });
 
     removeImage.addEventListener('click', () => {
-        imageInput.value = ""; // 清空 input 文件
-        previousFile = null; // 清空存储的文件
-        thumbnailContainer.style.display = 'none'; // 隐藏缩略图
-        localStorage.removeItem('uploadedImage'); // 清除本地存储的图片数据
+        imageInput.value = ""; // Clear input
+        uploadedFiles = []; // Clear stored files
+        thumbnailContainer.style.display = 'none';
+        thumbnailImage.style.display = 'none';
+        fileIcon.style.display = 'none';
+        // Clear localStorage
+        localStorage.removeItem('uploadedFilesCount');
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('uploadedFile_')) {
+                localStorage.removeItem(key);
+            }
+        }
     });
 
     function createMessageElement(text, image, isUser) {
@@ -311,7 +398,7 @@
 
         if (isUser) {
             // 如果 image 存在且有效
-            if (image) {
+            if (image.type.toString().includes('image')) {
                 try {
                     const imageElement = document.createElement('img');
                     imageElement.src = URL.createObjectURL(image); // 创建对象 URL
@@ -330,7 +417,7 @@
                 textElement.classList.add('text');
                 textElement.textContent = text;
                 messageElement.appendChild(textElement);
-                messageElement.appendChild(iconElement);
+                // messageElement.appendChild(iconElement);
             }
 
             // 创建文本元素
@@ -362,7 +449,7 @@
     sendButton.addEventListener('click', async () => {
         const messageText = messageInput.value.trim();
         const file = imageInput.files[0] || previousFile; // 使用当前文件或之前的文件
-        // console.log("file",file)
+        console.log("file",file.type.toString() )
         // if (!messageText && !file) return; // 没有文本和文件时不发送
 
         const userMessage = createMessageElement(messageText, file, isRight);
@@ -382,7 +469,7 @@
                 // Prepare data to be sent
                 const formData = new FormData();
                 formData.append('message', messageText);
-                formData.append('image', file || null); // 如果没有文件，则设置为 null
+                formData.append('file', file.type.toString() || null); // 如果没有文件，则设置为 null
 
                 const response = await fetch('/generate_ui', {
                     method: 'POST',
@@ -391,8 +478,10 @@
 
                 const data = await response.json();
                 if (data.response) {
-                    const botMessage = createMessageElement(data.response, null, !isRight);
-                    messagesContainer.appendChild(botMessage);
+                    data.response.forEach(item => {
+                        const botMessage = createMessageElement(item, null, !isRight);
+                        messagesContainer.appendChild(botMessage);
+                    });
                     messagesContainer.scrollTop = messagesContainer.scrollHeight;
                 }
             } catch (error) {
