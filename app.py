@@ -7,7 +7,7 @@ from PIL import Image, ImageEnhance
 import numpy as np
 import cv2
 import os
-from openai import AzureOpenAI
+
 import json
 import torch
 import torchvision
@@ -29,10 +29,10 @@ Session(app)
 
 # GroundingDINO+SAM configuration
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-GROUNDING_DINO_CONFIG_PATH = "../Grounded-Segment-Anything/GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py"
-GROUNDING_DINO_CHECKPOINT_PATH = "../CCA/checkpoints/groundingdino_swint_ogc.pth"
+GROUNDING_DINO_CONFIG_PATH = r"D:\downloads\GroundingDINO_SwinT_OGC.py"
+GROUNDING_DINO_CHECKPOINT_PATH = r"D:\downloads\groundingdino_swint_ogc.pth"
 SAM_ENCODER_VERSION = "vit_h"
-SAM_CHECKPOINT_PATH = "../Grounded-Segment-Anything/sam_vit_h_4b8939.pth"
+SAM_CHECKPOINT_PATH = r"D:\downloads\sam_vit_h_4b8939.pth"
 grounding_dino_model = Model(model_config_path=GROUNDING_DINO_CONFIG_PATH, model_checkpoint_path=GROUNDING_DINO_CHECKPOINT_PATH)
 sam = sam_model_registry[SAM_ENCODER_VERSION](checkpoint=SAM_CHECKPOINT_PATH)
 sam.to(device=DEVICE)
@@ -343,11 +343,15 @@ def generate_ui():
             6. The HTML should read the image from localStorage, specifically searching for the key "uploadedImage". It should call the appropriate API endpoint based on the operation performed by the user. The API endpoint name is constructed by adding a forward slash before the adjustment type, e.g., '/{adjustment_type}'. Use the keys: image, ObjectClass ({object_class}), and AdjustmentValue, where AdjustmentValue corresponds to the value selected by the user for the operation. The API response will be in the form: response = {{ "modified_image": "data:image/jpeg;base64,{{encoded_image}}" }}, and you need to use the modified_image field to display the result.
             7. The layout should be in a **left-aligned**, chat-like format, ensuring it is not overly large, with the parent container size not exceeding **500px** but also sized adequately to accommodate the image. Only **one image** should be displayed at a time, and this image should always be shown in the same position within the layout.
             8. Provide only the HTML code as output without any additional text or explanation.
-    
-            Please adhere to the above guidelines to generate the HTML page code specifically for this user instruction: {user_message}
-        """
+            
+            Notice: please be sure to have following code to show image:
+            const image = localStorage.getItem('uploadedImage');
+            if (image) {{
+                document.getElementById('modifiedImage').src = image;
+            }}
+            """
         session['ui_messages'].append(message_template('system', system_prompt))
-        session['ui_messages'].append(message_template('user', "generate the appropriate UI"))
+        session['ui_messages'].append(message_template('user', user_message))
         ui_response = process_symbol(api_answer(session['ui_messages']))
     else:
         response_message, html_template, session['data_agent_replacements_json']= generate_response(user_message)
