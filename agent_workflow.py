@@ -1,6 +1,6 @@
 from prompt_py import *
-from fake_api import *
-# from azure_api import *
+# from fake_api import *
+from azure_api import *
 from process_data import *
 import re
 from html_demo import *

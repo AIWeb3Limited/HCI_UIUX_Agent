@@ -70,7 +70,62 @@
         .message.right {
             align-items: flex-end;
         }
+    .controls {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
 
+    /* 缩略图容器：显示在 + 按钮上方 */
+    .thumbnail-container {
+        position: absolute;
+        bottom: 55px; /* 让图片出现在 + 按钮上方 */
+        left: 10px;
+        display: none;
+        padding: 5px;
+        background: rgba(255, 255, 255, 0.9);
+        border-radius: 8px;
+        box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.2);
+    }
+
+    /* 缩略图图片样式 */
+    .thumbnail-image {
+        width: 60px;
+        height: 60px;
+        object-fit: cover;
+        border-radius: 5px;
+        border: 2px solid black; /* 黑色描边 */
+    }
+
+    /* 删除按钮 */
+    .remove-image {
+        position: absolute;
+        top: -8px;
+        right: -8px;
+        width: 20px;
+        height: 20px;
+        background-color: black;
+        color: white;
+        border: none;
+        border-radius: 50%;
+        font-size: 14px;
+        font-weight: bold;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    /* 上传按钮样式 */
+    .upload-icon {
+        font-size: 24px;
+        cursor: pointer;
+        padding: 5px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        background: white;
+    }
         .message .icon {
             width: 40px;
             height: 40px;
@@ -180,8 +235,12 @@
         <!-- Messages will be appended here -->
     </div>
     <div class="controls">
+        <div class="thumbnail-container" id="thumbnailContainer" style="display: none;">
+            <img id="thumbnailImage" class="thumbnail-image" alt="Uploaded Image">
+            <button id="removeImage" class="remove-image">×</button>
+        </div>
         <label for="imageInput" class="upload-icon" title="Upload Image">➕</label>
-        <input type="file" id="imageInput" accept="image/*" title="Choose an image">
+        <input type="file" id="imageInput" accept="image/*" title="Choose an image" style="display: none;">
         <input type="text" id="messageInput" placeholder="Type your message..." title="Type your message">
         <button id="sendButton" title="Send message">Send</button>
         <button id="roleToggle" class="role-toggle" title="Toggle role">Debug</button>
@@ -189,12 +248,15 @@
 </div>
 
 <script>
-    const messagesContainer = document.getElementById('messages');
+       const messagesContainer = document.getElementById('messages');
     const messageInput = document.getElementById('messageInput');
     const sendButton = document.getElementById('sendButton');
     const roleToggle = document.getElementById('roleToggle');
     const imageInput = document.getElementById('imageInput');
     const uploadIcon = document.querySelector('label[for="imageInput"]');
+    const thumbnailContainer = document.getElementById('thumbnailContainer');
+    const thumbnailImage = document.getElementById('thumbnailImage');
+    const removeImage = document.getElementById('removeImage');
     let isRight = true;
     let previousFile = null; // 用于存储之前上传的文件
 
@@ -214,15 +276,26 @@
     });
 
     imageInput.addEventListener('change', (event) => {
-        const previousFile = event.target.files[0]; // 存储当前上传的文件
-        if (previousFile) {
+        const file = event.target.files[0];
+
+        if (file) {
+            previousFile = file; // 存储当前上传的文件
             const reader = new FileReader();
             reader.onload = (e) => {
                 const base64Image = e.target.result; // 获取 Base64 字符串
                 localStorage.setItem('uploadedImage', base64Image); // 存储 Base64 图像
+                thumbnailImage.src = base64Image; // 显示缩略图
+                thumbnailContainer.style.display = 'inline-block'; // 显示缩略图容器
             };
-            reader.readAsDataURL(previousFile); // 将文件读取为 Data URL
+            reader.readAsDataURL(file); // 读取文件为 Data URL
         }
+    });
+
+    removeImage.addEventListener('click', () => {
+        imageInput.value = ""; // 清空 input 文件
+        previousFile = null; // 清空存储的文件
+        thumbnailContainer.style.display = 'none'; // 隐藏缩略图
+        localStorage.removeItem('uploadedImage'); // 清除本地存储的图片数据
     });
 
     function createMessageElement(text, image, isUser) {
