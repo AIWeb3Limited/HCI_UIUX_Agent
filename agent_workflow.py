@@ -82,7 +82,7 @@ def know_data_agent(query,code_sample=None):
     if code_sample:
         api_response=code_sample
     else:
-        api_response=api_answer(messages,'json')
+        api_response=chat_single(messages,'json')
 
     know_data_agent_response=json.loads(api_response)
     # {
@@ -98,6 +98,15 @@ def know_data_agent(query,code_sample=None):
         other_result[database_name+"_data"]=get_data(None,database_name)
 
     return databases_info,other_result,know_data_agent_response['route_plan']
+def extract_garagecodes(data):
+    garagecodes = []
+    for item in data:
+        nearest_locations = item.get("nearest_locations", [])
+        for location in nearest_locations:
+            if "garagecode" in location:
+                garagecodes.append(location["garagecode"])
+    return garagecodes
+
 def get_data_agent(databases_info,query,route_plan,code_sample=None):
     messages=[]
 
@@ -106,7 +115,7 @@ def get_data_agent(databases_info,query,route_plan,code_sample=None):
     if code_sample:
         get_data_agent_response = code_sample
     else:
-        get_data_agent_response=api_answer(messages)
+        get_data_agent_response=chat_single(messages)
     searched_result=run_code_from_string(get_data_agent_response)
     # searched_result
     return searched_result
@@ -131,7 +140,7 @@ def html_generate_agent(query,searched_result,other_result,route_plan):
     if template_judge_result:
         html_generate_agent_response=template_judge_result
     else:
-        html_generate_agent_response=api_answer(messages)
+        html_generate_agent_response=chat_single(messages)
     replacements_list=[]
     replacements_list.append({'variable':"searched_result","value":searched_result})
     for var_name in other_result:
@@ -150,7 +159,7 @@ Options:
 
 "What activities are available when the weather is good and pollution is low?"
 "The relationship between the amount of pollutants and temperature."
-"5 closet place address of a certain address"
+"closet place address of a certain address"
 "Route planning from point A to point B."
 "None of the above."
 
@@ -160,12 +169,12 @@ Note: It is sufficient if the type of question is similar.
         "What activities are available when the weather is good and pollution is low?":events_html_code,
         "The relationship between the amount of pollutants and temperature.":charts_html_code,
         "Route planning from point A to point B.":route_html_code,
-        "5 closet place address of a certain address":closet_address,
+        "closet place address of a certain address":closet_address,
         "None of the above.":None
     }
     messages.append(message_template('system',system_prompt))
     messages.append(message_template('user',query))
-    judge_template_agent_response=json.loads(api_answer(messages,'json'))
+    judge_template_agent_response=json.loads(chat_single(messages,'json'))
     selected_html=selction_json[judge_template_agent_response['selection']]
     return selected_html
 
@@ -211,9 +220,24 @@ for date in good_weather_low_pollution_dates:
     print("other_result", other_result)
     new_html,html_generate_agent_response,replacements_json = html_generate_agent(query, searched_result, other_result,route_plan)
     print(new_html)
-    return new_html,html_generate_agent_response,replacements_json
-
-# generate_response('closet 6 parking around Viby Bibliotek')
+    return new_html,html_generate_agent_response,replacements_json,searched_result
+# playgroup_data = get_data(['International Playgroup'], 'locations')
+# print(playgroup_data)
+# # Extract the longitude and latitude for "International Playgroup"
+# start_longitude = playgroup_data[0]['longitude']
+# start_latitude = playgroup_data[0]['latitude']
+#
+# # Step 2: Get the location data for "NORREPORT"
+# norreport_data = get_data(['NORREPORT'], 'locations')
+#
+# # Extract the longitude and latitude for "NORREPORT"
+# end_longitude = norreport_data[0]['longitude']
+# end_latitude = norreport_data[0]['latitude']
+#
+# # Step 3: Plan the route from "International Playgroup" to "NORREPORT"
+# searched_result = plan_routes(start_longitude, start_latitude, end_longitude, end_latitude)
+# print(searched_result)
+# generate_response('closet parking around Viby Bibliotek')
 # resuls=get_data(['2014-08-02', '2014-08-09', '2014-08-15', '2014-08-01', '2014-08-04'],'events')
 # code_str="""
 # viby_bibliotek_location = get_data(['Viby Bibliotek'], 'events')

@@ -1,4 +1,4 @@
-from fake_api import *
+
 import supervision as sv
 from flask import Flask, request, jsonify, session, render_template, make_response
 from flask_session import Session
@@ -16,6 +16,10 @@ from segment_anything import sam_model_registry, SamPredictor
 import base64
 from io import BytesIO
 from agent_workflow import *
+from lama_inpaint import inpaint_img_with_lama
+from stable_diffusion_inpaint import fill_img_with_sd
+from utils import *
+from sam_segment import predict_masks_with_sam
 
 
 prev_object_class = None
@@ -29,10 +33,10 @@ Session(app)
 
 # GroundingDINO+SAM configuration
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-GROUNDING_DINO_CONFIG_PATH = "../Grounded-Segment-Anything/GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py"
-GROUNDING_DINO_CHECKPOINT_PATH = "../CCA/checkpoints/groundingdino_swint_ogc.pth"
+GROUNDING_DINO_CONFIG_PATH = r"GroundingDINO_SwinT_OGC.py"
+GROUNDING_DINO_CHECKPOINT_PATH = r"groundingdino_swint_ogc.pth"
 SAM_ENCODER_VERSION = "vit_h"
-SAM_CHECKPOINT_PATH = "../Grounded-Segment-Anything/sam_vit_h_4b8939.pth"
+SAM_CHECKPOINT_PATH = r"sam_vit_h_4b8939.pth"
 grounding_dino_model = Model(model_config_path=GROUNDING_DINO_CONFIG_PATH, model_checkpoint_path=GROUNDING_DINO_CHECKPOINT_PATH)
 sam = sam_model_registry[SAM_ENCODER_VERSION](checkpoint=SAM_CHECKPOINT_PATH)
 sam.to(device=DEVICE)
@@ -40,6 +44,10 @@ sam_predictor = SamPredictor(sam)
 BOX_THRESHOLD = 0.35
 TEXT_THRESHOLD = 0.35
 NMS_THRESHOLD = 0.82
+
+# LAMA configuration
+LAMA_CONFIG = "./lama/configs/prediction/default.yaml"
+LAMA_CKPT = "./pretrained_models/big-lama"
 
 
 def segment(sam_predictor: SamPredictor, image: np.ndarray, xyxy: np.ndarray) -> np.ndarray:
@@ -103,7 +111,7 @@ def process_symbol(s):
 
 
 def process_message(message):
-    result=api_answer(message)
+    result=chat_single(message)
     return result
 
 
@@ -115,6 +123,7 @@ def initialize_session():
     #     session['ui_messages'] = []  
         
     session['ui_messages'] = []  
+    session['pure_text'] = []
     session['data_agent_messages'] = []  # Initialize an empty list for messages
     session['data_agent_replacements_json']= []  # Initialize an empty list for messages
     # session['data_agent_messages'].append(message_template('system',system_prompt))# 
@@ -131,24 +140,30 @@ def option(user_message):
     system_prompt = """
         **Instructions**:
         You are an advanced image editing assistant capable of handling a variety of image editing requests. 
-        The allowable operations are defined in the following list: ["recolor", "brightness", "contrast", "saturation"]. 
+        The allowable operations are defined in the following list: ["recolor", "brightness", "contrast", "saturation", "object_manipuate"]. 
         Your task is to interpret the user's request and select the appropriate operation type from this predefined list, 
         then provide corresponding options.
 
         **Guidelines**:
         1. **Identify the Request Type:** Based on the user's request, determine which operation type from the predefined list best matches the user's need.
-        2. **Object Identification:** If applicable (mainly for recolor operations), identify the object within the image that the user wants to modify.
+        2. **Object Identification:** For all operations, identify the object within the image that the user wants to modify or manipulate.
         3. **Provide Adjustment Options:**
-            - For **recolor** operations, follow previous instructions for identifying objects and provide a gradient of at least 8 hexadecimal color codes that represent variations from light to dark shades of that color
+            - For **recolor** operations, follow previous instructions for identifying objects and provide a gradient of at least 8 hexadecimal color codes that represent variations from light to dark shades of that color.
+            - For **object_manipulate** operations:
+                - If the action is remove, set "Is Remove" to true and confirm the object that needs to be removed.
+                - If the action is relocate, leave "Adjustment Options" empty.
             - For adjustments like **brightness**, **contrast**, or **saturation**, provide adjustment values as floating-point numbers where 1 represents the original effect. Values less than 1 indicate a reduction in intensity, while values greater than 1 increase it.
             - If the request involves more abstract or subjective criteria (e.g., "make it look warmer"), choose settings that best fit the description based on common design principles and aesthetics.
-        4. **Response Formatting:** Return your response in JSON format with details about the selected adjustment type, relevant object (if applicable), and specific options.
+        4. **Describe Possible UI Effects and Controls:** Describe potential UI elements and interactions that could be used to facilitate the selected operation. Focus on describing common UI controls such as sliders, color pickers, drag-and-drop functionality, and confirmation dialogs. Highlight how these controls can enhance the user experience by allowing real-time previews and easy manipulation of image elements.
+        5. **Response Formatting:** Return your response in JSON format with details about the selected adjustment type, relevant object (if applicable), and specific options.
 
         **Output Format**:
         {
             "Adjustment Type": <type_of_adjustment>,
-            "Object Class": <object_class>, // Only needed if applicable, e.g., for color changes
-            "Adjustment Options": [<options>] 
+            "Object Class": <object_class>, 
+            "Adjustment Options": [<options>],
+            "Is Remove": <boolean>, // Only applicable for 'remove' under 'object_manipulate'
+            "UI Description": <description_of_possible_ui>
         }
 
         **Examples**:  
@@ -157,34 +172,174 @@ def option(user_message):
         {
             "Adjustment Type": "recolor",
             "Object Class": "the car",
-            "Adjustment Options": ["#ADD8E6", "#87CEEB", "#6495ED", "#4682B4", "#0000FF", "#0000CD", "#00008B", "#000080"]
+            "Adjustment Options": ["#ADD8E6", "#87CEEB", "#6495ED", "#4682B4", "#0000FF", "#0000CD", "#00008B", "#000080"],
+            "UI Description": "The UI includes a color picker or slider that allows users to select different shades of blue. Users can see live previews of how each shade affects the car."
         }
         ```
-        User Request: "Increase the contrast."
+        User Request: "Remove the tree."
         ```json
         {
-            "Adjustment Type": "contrast",
-            "Adjustment Options": [0.25, 0.5, 1, 1.5, 2]
+            "Adjustment Type": "object_manipulate",
+            "Object Class": "tree",
+            "Is Remove": true,
+            "UI Description": "A confirmation dialog appears to ensure the user intends to remove the tree. Once confirmed, the tree is removed from the image preview."
+        }
+        ```
+        User Request: "Move the chair."
+        ```json
+        {
+            "Adjustment Type": "object_manipulate",
+            "Object Class": "chair",
+            "Adjustment Options": [],
+            "UI Description": "The UI offers drag-and-drop functionality or coordinate input fields for precise positioning. Users can move the chair around the image in real-time, seeing immediate updates in the preview."
         }
         ```
     """
     session['option_messages'].append(message_template('system', system_prompt))
     session['option_messages'].append(message_template('user', user_message))
-    response = json.loads(api_answer(session['option_messages'], "json"))
+    response=chat_single(session['option_messages'], "json")
+    try:
+        response = json.loads(response)
+    except:
+        print(response,'json error')
     print(response)
     return response
 
 
-def hex_to_rgb(hex_color):
-    if len(hex_color) == 3:
-        return hex_color
-    hex_color = hex_color.lstrip('#')
-    if len(hex_color) != 6:
-        raise ValueError("Invalid hex color code")
-    r = int(hex_color[0:2], 16)
-    g = int(hex_color[2:4], 16)
-    b = int(hex_color[4:6], 16)
-    return [r, g, b]
+@app.route('/remove', methods=['POST'])
+def remove():
+    data = request.get_json()
+    image_data = data['image']
+    object_class = data["ObjectClass"]
+    if image_data.startswith('data:image/png;base64,'):
+        header, base64_data = image_data.split(',', 1)
+    elif image_data.startswith('data:image/jpeg;base64,'):
+        header, base64_data = image_data.split(',', 1)
+    else:
+        return "Invalid image format", 400
+    image = base64.b64decode(base64_data)
+    image_pil = Image.open(BytesIO(image))
+    image_cv = np.frombuffer(image, np.uint8)
+    image_cv = cv2.imdecode(image, cv2.IMREAD_COLOR)
+
+    masks = object_segment(image_cv, object_class)
+    masks = masks.astype(np.uint8) * 255
+    dilate_masks = [dilate_mask(mask, 15) for mask in masks]
+
+    for idx, mask in enumerate(dilate_masks):
+        image_pil = inpaint_img_with_lama(
+            image_pil, mask, LAMA_CONFIG, LAMA_CKPT, device=DEVICE)
+    buffered = BytesIO()
+    image_pil.save(buffered, format="JPEG")
+    image_pil.save("remove.jpg", format="JPEG")
+    buffered.seek(0)
+    encoded_image = base64.b64encode(buffered.getvalue()).decode('utf-8')
+    response = {
+        "modified_image": f"data:image/jpeg;base64,{encoded_image}"
+    }
+
+    return jsonify(response)
+
+
+def process_image(image_data, object_class, point_coords=None, is_remove=False):
+    if image_data.startswith('data:image/png;base64,'):
+        header, base64_data = image_data.split(',', 1)
+    elif image_data.startswith('data:image/jpeg;base64,'):
+        header, base64_data = image_data.split(',', 1)
+    else:
+        return "Invalid image format", 400
+    
+    image = base64.b64decode(base64_data)
+    image_pil = load_img_to_array(image)
+    image_cv = np.frombuffer(image, np.uint8)
+    image_cv = cv2.imdecode(image_cv, cv2.IMREAD_COLOR)
+
+    if point_coords:  
+        masks, _, _ = predict_masks_with_sam(predictor=sam_predictor, img=image_pil, point_coords=[point_coords], point_labels=[1])
+    elif object_class:
+        masks = object_segment(image_cv, object_class)
+    
+    masks = masks.astype(np.uint8) * 255
+    dilate_masks = [dilate_mask(mask, 15) for mask in masks]
+
+    for idx, mask in enumerate(dilate_masks):
+        image_pil = inpaint_img_with_lama(
+            image_pil, mask, LAMA_CONFIG, LAMA_CKPT, device=DEVICE)
+        
+    completed_image = Image.fromarray(image_pil.astype(np.uint8))
+    buffered = BytesIO()
+    completed_image.save(buffered, format="JPEG")
+    completed_image.save("process.jpg", format="JPEG")
+    buffered.seek(0)
+    completed_image = base64.b64encode(buffered.getvalue()).decode('utf-8')
+    
+    if not is_remove:
+        masked_image = apply_mask_with_transparency(image_cv, masks[0])
+        mask_image = Image.fromarray(masked_image, 'RGBA')
+        buffered = BytesIO()
+        mask_image.save(buffered, format="PNG")
+        buffered.seek(0)
+        mask_data = base64.b64encode(buffered.getvalue()).decode('utf-8')
+
+        return {
+            "modified_image": f"data:image/jpeg;base64,{completed_image}",
+            "mask_image": f"data:image/png;base64,{mask_data}"
+        }
+    else:
+        return{
+            "modified_image": f"data:image/jpeg;base64,{completed_image}"
+        }
+
+
+@app.route('/object_manipulate', methods=['POST'])
+def object_manipulate():
+    data = request.get_json()
+    image_data = data['image']
+    if "ObjectClass" in data:
+        object_class = data["ObjectClass"]
+    else:
+        object_class = None
+    if "PointCoord" in data:
+        point_coords = data["PointCoord"]
+        print(point_coords)
+    else:
+        point_coords = None
+    is_remove = data["IsRemove"]
+    response = process_image(image_data, object_class, point_coords, is_remove)
+    return jsonify(response)
+
+
+@app.route('/replace', methods=['POST'])
+def replace():
+    data = request.get_json()
+    image_data = data['image']
+    object_class = data["ObjectClass"]
+    text_prompt = data["TextPrompt"]
+    if image_data.startswith('data:image/png;base64,'):
+        header, base64_data = image_data.split(',', 1)
+    elif image_data.startswith('data:image/jpeg;base64,'):
+        header, base64_data = image_data.split(',', 1)
+    else:
+        return "Invalid image format", 400
+    image = base64.b64decode(base64_data)
+    image_pil = Image.open(BytesIO(image))
+    image_cv = np.frombuffer(image, np.uint8)
+    image_cv = cv2.imdecode(image, cv2.IMREAD_COLOR)
+    masks = object_segment(image_cv, object_class)
+    masks = masks.astype(np.uint8) * 255
+    for idx, mask in enumerate(masks):
+        image_pil = fill_img_with_sd(
+            image_pil, mask, text_prompt, device=DEVICE)
+    buffered = BytesIO()
+    image_pil.save(buffered, format="JPEG")
+    image_pil.save("replace.jpg", format="JPEG")
+    buffered.seek(0)
+    encoded_image = base64.b64encode(buffered.getvalue()).decode('utf-8')
+    response = {
+        "modified_image": f"data:image/jpeg;base64,{encoded_image}"
+    }
+
+    return jsonify(response)
 
 
 @app.route('/recolor', methods=['POST'])
@@ -236,9 +391,10 @@ def recolor():
 
 @app.route('/brightness', methods=['POST'])
 def brightness():
+    global prev_object_class, prev_image_data, prev_masks
     data = request.get_json()
     image_data = data['image']
-    ad_value = float(data['AdjustmentValue'])
+    object_class = data["ObjectClass"]
     if image_data.startswith('data:image/png;base64,'):
         header, base64_data = image_data.split(',', 1)
     elif image_data.startswith('data:image/jpeg;base64,'):
@@ -246,12 +402,35 @@ def brightness():
     else:
         return "Invalid image format", 400
     image = base64.b64decode(base64_data)
-    image = Image.open(BytesIO(image))
-    enhancer = ImageEnhance.Brightness(image)
-    image_adjusted = enhancer.enhance(ad_value)
+    image = np.frombuffer(image, np.uint8)
+    image = cv2.imdecode(image, cv2.IMREAD_COLOR)
+    if object_class != prev_object_class or image_data != prev_image_data:
+        masks = object_segment(image, object_class)
+        masks = masks.astype(np.uint8) * 255
+        prev_object_class = object_class
+        prev_image_data = image_data
+        prev_masks = masks
+    else:
+        masks = prev_masks
+    ad_value = float(data['AdjustmentValue'])
+    if image_data.startswith('data:image/png;base64,'):
+        header, base64_data = image_data.split(',', 1)
+    elif image_data.startswith('data:image/jpeg;base64,'):
+        header, base64_data = image_data.split(',', 1)
+    else:
+        return "Invalid image format", 400
+
+    image_pil = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    final_image = image_pil.copy()
+    for mask in masks:
+        mask_pil = Image.fromarray(mask).convert("L")  
+        image_masked = image_pil.copy()
+        enhancer = ImageEnhance.Brightness(image_masked)
+        image_adjusted = enhancer.enhance(ad_value)
+        final_image = Image.composite(image_adjusted, image_pil, mask_pil)
     buffered = BytesIO()
-    image_adjusted.save(buffered, format="JPEG")
-    image_adjusted.save("brightness.jpg", format="JPEG")
+    final_image.save(buffered, format="JPEG")
+    final_image.save("brightness.jpg", format="JPEG")
     buffered.seek(0)
     encoded_image = base64.b64encode(buffered.getvalue()).decode('utf-8')
     response = {
@@ -263,9 +442,10 @@ def brightness():
 
 @app.route('/contrast', methods=['POST'])
 def contrast():
+    global prev_object_class, prev_image_data, prev_masks
     data = request.get_json()
     image_data = data['image']
-    ad_value = float(data['AdjustmentValue'])  # Contrast adjustment value
+    object_class = data["ObjectClass"]
     if image_data.startswith('data:image/png;base64,'):
         header, base64_data = image_data.split(',', 1)
     elif image_data.startswith('data:image/jpeg;base64,'):
@@ -273,12 +453,35 @@ def contrast():
     else:
         return "Invalid image format", 400
     image = base64.b64decode(base64_data)
-    image = Image.open(BytesIO(image))
-    enhancer = ImageEnhance.Contrast(image)
-    image_adjusted = enhancer.enhance(ad_value)
+    image = np.frombuffer(image, np.uint8)
+    image = cv2.imdecode(image, cv2.IMREAD_COLOR)
+    if object_class != prev_object_class or image_data != prev_image_data:
+        masks = object_segment(image, object_class)
+        masks = masks.astype(np.uint8) * 255
+        prev_object_class = object_class
+        prev_image_data = image_data
+        prev_masks = masks
+    else:
+        masks = prev_masks
+    ad_value = float(data['AdjustmentValue'])
+    if image_data.startswith('data:image/png;base64,'):
+        header, base64_data = image_data.split(',', 1)
+    elif image_data.startswith('data:image/jpeg;base64,'):
+        header, base64_data = image_data.split(',', 1)
+    else:
+        return "Invalid image format", 400
+
+    image_pil = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    final_image = image_pil.copy()
+    for mask in masks:
+        mask_pil = Image.fromarray(mask).convert("L")  
+        image_masked = image_pil.copy()
+        enhancer = ImageEnhance.Contrast(image_masked)
+        image_adjusted = enhancer.enhance(ad_value)
+        final_image = Image.composite(image_adjusted, image_pil, mask_pil)
     buffered = BytesIO()
-    image_adjusted.save(buffered, format="JPEG")
-    image_adjusted.save("contrast.jpg", format="JPEG")
+    final_image.save(buffered, format="JPEG")
+    final_image.save("brightness.jpg", format="JPEG")
     buffered.seek(0)
     encoded_image = base64.b64encode(buffered.getvalue()).decode('utf-8')
     response = {
@@ -290,9 +493,10 @@ def contrast():
 
 @app.route('/saturation', methods=['POST'])
 def saturation():
+    global prev_object_class, prev_image_data, prev_masks
     data = request.get_json()
     image_data = data['image']
-    ad_value = float(data['AdjustmentValue'])  # Saturation adjustment value
+    object_class = data["ObjectClass"]
     if image_data.startswith('data:image/png;base64,'):
         header, base64_data = image_data.split(',', 1)
     elif image_data.startswith('data:image/jpeg;base64,'):
@@ -300,12 +504,35 @@ def saturation():
     else:
         return "Invalid image format", 400
     image = base64.b64decode(base64_data)
-    image = Image.open(BytesIO(image))
-    enhancer = ImageEnhance.Color(image) 
-    image_adjusted = enhancer.enhance(ad_value)
+    image = np.frombuffer(image, np.uint8)
+    image = cv2.imdecode(image, cv2.IMREAD_COLOR)
+    if object_class != prev_object_class or image_data != prev_image_data:
+        masks = object_segment(image, object_class)
+        masks = masks.astype(np.uint8) * 255
+        prev_object_class = object_class
+        prev_image_data = image_data
+        prev_masks = masks
+    else:
+        masks = prev_masks
+    ad_value = float(data['AdjustmentValue'])
+    if image_data.startswith('data:image/png;base64,'):
+        header, base64_data = image_data.split(',', 1)
+    elif image_data.startswith('data:image/jpeg;base64,'):
+        header, base64_data = image_data.split(',', 1)
+    else:
+        return "Invalid image format", 400
+
+    image_pil = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    final_image = image_pil.copy()
+    for mask in masks:
+        mask_pil = Image.fromarray(mask).convert("L")  
+        image_masked = image_pil.copy()
+        enhancer = ImageEnhance.Color(image_masked)
+        image_adjusted = enhancer.enhance(ad_value)
+        final_image = Image.composite(image_adjusted, image_pil, mask_pil)
     buffered = BytesIO()
-    image_adjusted.save(buffered, format="JPEG")
-    image_adjusted.save("saturation.jpg", format="JPEG")
+    final_image.save(buffered, format="JPEG")
+    final_image.save("brightness.jpg", format="JPEG")
     buffered.seek(0)
     encoded_image = base64.b64encode(buffered.getvalue()).decode('utf-8')
     response = {
@@ -319,15 +546,27 @@ def saturation():
 def generate_ui():
     session['ui_messages'] = []
     user_message = request.form['message']
+    query_file='text'
     try:
-        image = request.files['image']
+        file_info = request.form['file']
+        if 'image' in file_info:
+            query_file='image'
+        else:
+            query_file='csv'
+
+        # print('image',image)
     except:
-        image=None
-    if image:
+        query_file=None
+    if query_file=='image':
         result = option(user_message)
         adjustment_type = result["Adjustment Type"]
         object_class = result.get("Object Class", None)
-        adjustment_options = result["Adjustment Options"]
+        if "Adjustment Options" in result:
+            adjustment_options = result["Adjustment Options"]
+        else:
+            adjustment_options = None
+        is_remove = result.get("is_remove", False)
+        ui_effect = result["UI Description"]
         system_prompt = f"""
             **Instructions**:
             You are an expert UI design assistant specialized in generating aesthetically pleasing, simple, direct,
@@ -340,20 +579,92 @@ def generate_ui():
             3. Adopt a minimalist and modern design style, with harmonious color schemes and avoid overly complex or harsh designs.
             4. Make sure all interactive elements (buttons, sliders, etc.) are highly clickable and responsive.
             5. Ensure the generated HTML code is well-structured, with clear comments to facilitate future maintenance.
-            6. The HTML should read the image from localStorage, specifically searching for the key "uploadedImage". It should call the appropriate API endpoint based on the operation performed by the user. The API endpoint name is constructed by adding a forward slash before the adjustment type, e.g., '/{adjustment_type}'. Use the keys: image, ObjectClass ({object_class}), and AdjustmentValue, where AdjustmentValue corresponds to the value selected by the user for the operation. The API response will be in the form: response = {{ "modified_image": "data:image/jpeg;base64,{{encoded_image}}" }}, and you need to use the modified_image field to display the result.
-            7. The layout should be in a **left-aligned**, chat-like format, ensuring it is not overly large, with the parent container size not exceeding **500px** but also sized adequately to accommodate the image. Only **one image** should be displayed at a time, and this image should always be shown in the same position within the layout.
-            8. Provide only the HTML code as output without any additional text or explanation.
-    
-            Please adhere to the above guidelines to generate the HTML page code specifically for this user instruction: {user_message}
-        """
+            6. The HTML should read the image from localStorage, specifically searching for the key "uploadedImage". It should call the appropriate API endpoint based on the operation performed by the user. The API endpoint name is constructed by adding a forward slash before the adjustment type, e.g., '/{adjustment_type}'. Use the keys: image, ObjectClass ({object_class}), IsRemove ({is_remove})and AdjustmentValue, where AdjustmentValue corresponds to the value selected by the user for the operation. The API response will be in the form: `response = {{"modified_image": "data:image/jpeg;base64,{{encoded_image}}", "mask_image": "data:image/png;base64,{{mask_data}}" (if applicable)}}. Handle cases where the 'mask_image' field may or may not be present. If 'mask_image' is available, display it appropriately overlaying the modified image.
+            7. Incorporate the provided **UI Description**: {ui_effect} to understand how the API results should be displayed and interacted with in the UI. This description may include details about how the result should be previewed or additional interactions required after applying the adjustment.
+            8. The layout should be in a **left-aligned**, chat-like format, ensuring it is not overly large, with the parent container size not exceeding **500px** but also sized adequately to accommodate the image. Only **one image** should be displayed at a time, and this image should always be shown in the same position within the layout.
+            9. Provide only the HTML code as output without any additional text or explanation.
+            Notice: please be sure to have following code to show image:
+            const image = localStorage.getItem('uploadedImage');
+            if (image) {{
+                document.getElementById('modifiedImage').src = image;
+            }}
+            """
         session['ui_messages'].append(message_template('system', system_prompt))
-        session['ui_messages'].append(message_template('user', "generate the appropriate UI"))
-        ui_response = process_symbol(api_answer(session['ui_messages']))
-    else:
-        response_message, html_template, session['data_agent_replacements_json']= generate_response(user_message)
-        session['data_agent_messages'].append(message_template('assistant', html_template))
-        ui_response = process_symbol(response_message)
+        session['ui_messages'].append(message_template('user', user_message))
+        ui_response = [process_symbol(chat_single(session['ui_messages']))]
+        var_template="""
+{adjustment_type}	recolor
+{adjustment_options}	['#98FB98', '#7CFC00', '#00FF00', '#32CD32', '#008000', '#006400', '#228B22', '#006400']
+{object_class}	hair
+{is_remove}	False
+{ui_effect}	The UI includes a color picker or slider that allows users to select different shades of green. Users can see live previews of how each shade affects the hair.
+{user_message}	change hair color to green
+        """
+        print("system_prompt",system_prompt)
+        # session['ui_messages'].append(message_template('system', system_prompt))
+        # session['ui_messages'].append(message_template('user', "generate the appropriate UI"))
+        # ui_response = process_symbol(chat_single(session['ui_messages']))
+    elif query_file=='csv':
+        mission_plan_list=[]
+        ui_response = []
+        mission_plan_list.append(message_template('system', """
+You need to break down the task to basic queries below and answer one sub-question at a time.  
+The most basic queries include:  
 
+weather related:
+- **Listing events/activities** under certain weather conditions  (like events in good weather and low pollution) 
+location related:
+- **Route planning** from one place to another  
+- **Finding the nearest parking places** to a certain place (keep the nearest number in the query)   
+- **show data relationships** between two pieces of data  
+
+For example, if a user wants to find the nearest parking lot to a certain place and display navigation to it, follow this approach:  
+
+1. First, answer **"What is the nearest parking lot to a certain place?"**  
+2. After obtaining the result, proceed to **"What is the navigation from this place to the parking lot?"**  
+
+
+
+If the current step is the **final step**, set key final_step as true  
+If the query itself is **already a basic query**, then the **first step is the final step**.  
+
+
+Each response should only contain **one** sub-question at a time, formatted as below:  
+
+**explain why this step is or is not final step**
+```json
+{
+  "this_step_task_query": "query",
+  "final_step":false
+}
+```
+        """))
+
+        mission_plan_list.append(message_template('user', user_message))
+        final_step = False
+        while not final_step:
+            mission_answer = chat_single(mission_plan_list,'json_few_shot')
+            print(mission_answer)
+            if 'final_step' in mission_answer:
+                final_step = mission_answer['final_step']
+
+
+            if 'this_step_task_query' in mission_answer:
+                step_query=mission_answer['this_step_task_query']
+                response_message, html_template, session['data_agent_replacements_json'],searched_result= generate_response(step_query)
+                if 'garagecode' in str(searched_result):
+                    searched_result=f'searched parking places: {str(extract_garagecodes(searched_result))}'
+                mission_plan_list.append(message_template('user', 'searched_result: ' + str(searched_result)))
+                print('searched_ result: ' + str(searched_result))
+
+                session['data_agent_messages'].append(message_template('assistant', html_template))
+                ui_response .append(process_symbol(response_message))
+
+
+    else:
+        session['pure_text'].append(message_template('system', ''))
+        session['pure_text'].append(message_template('user', user_message))
+        ui_response = [process_symbol(chat_single(session['pure_text']))]
     return jsonify({'response': ui_response})
 
 
@@ -364,4 +675,4 @@ def add_security_headers(response):
 
 
 if __name__ == '__main__':
-    app.run(debug=True,host='0.0.0.0')
+    app.run(host='0.0.0.0',port='6060')

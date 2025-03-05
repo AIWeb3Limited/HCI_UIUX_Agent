@@ -98,69 +98,90 @@ def know_data( column_names,csv_file):
         return {"error": str(e)}
 
 
+import requests
+
+
+def get_street_name(lat, lon):
+    url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}"
+    headers = {"User-Agent": "YourAppName/1.0 (your@email.com)"}  # 避免被拒绝访问
+
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()  # 检查 HTTP 请求是否成功
+        data = response.json()
+
+        # 提取街道名称
+        street_name = data.get("address", {}).get("suburb", "unkown suburb")+", " +data.get("address", {}).get("road", "unkown road")+", " +data.get("address", {}).get("house_number", "unkown house_number")
+        return street_name
+
+    except requests.RequestException as e:
+        print(f"请求错误: {e}")
+        return None
+
+
+# # 示例调用
+# latitude = 39.9042  # 北京纬度
+# longitude = 116.4074  # 北京经度
+# street = get_street_name(latitude, longitude)
+# print(f"街道名称: {street}")
+
+
+import pandas as pd
+import json
+
 
 def get_data(data_names, csv_filename):
     """
     从CSV文件中查找数据名称并返回对应行或列的数据，返回格式为JSON。
 
+    如果输入的 csv_filename 不在 ["parking", "pollution", "weather", "events"] 中，
+    或者查询结果为空，则依次遍历这四个 CSV 文件，直到找到非空结果。
+
     :param data_names: 单个数据名称或数据名称列表
     :param csv_filename: CSV文件名（不含扩展名）
     :return: JSON格式的结果
     """
-    # 确保 data_names 是列表
-    csv_filename = f"available_data/{csv_filename}.csv"
+    valid_filenames = ["parking", "pollution", "weather", "events"]
 
-    try:
-        # 读取CSV文件
-        df = pd.read_csv(csv_filename, encoding='utf-8-sig')
+    def fetch_data(file):
+        """尝试从指定的 CSV 文件获取数据"""
+        try:
+            df = pd.read_csv(f"available_data/{file}.csv", encoding='utf-8-sig')
 
-        if isinstance(data_names, str):
-            data_names = [data_names]
-        if not data_names or len(data_names)==0:
-            raw_data = df.to_dict(orient='records')
-            data_intro = {"length": len(raw_data), "keys": list(df.columns)}
-            print(data_intro)
-            return raw_data
-        # 检查是否所有的 data_names 都是列名
-        if all(name in df.columns for name in data_names):
-            # 如果 data_names 是列名，返回指定的列
-            selected_columns = df[data_names]
-
-            # 检查是否有 'date' 列
-            if 'date' in df.columns:
-                selected_columns['date'] = df['date']
+            if isinstance(data_names, str):
+                data_names_list = [data_names]
             else:
-                print("Warning: 'date' column not found in the CSV file.")
+                data_names_list = data_names if data_names else []
 
-            # 数据简介
-            data_intro = {'length': len(selected_columns), 'keys': list(selected_columns.columns)}
-            print(data_intro)
+            if not data_names_list:
+                raw_data = df.to_dict(orient='records')
+                return raw_data if raw_data else None
 
-            # 返回包含 date 的结果
-            return selected_columns.to_dict(orient='records')
+            if all(name in df.columns for name in data_names_list):
+                selected_columns = df[data_names_list]
+                if 'date' in df.columns:
+                    selected_columns['date'] = df['date']
+                return selected_columns.to_dict(orient='records')
 
-        # 如果 data_names 为空，返回所有数据
+            matched_rows = df[df.apply(lambda row: any(name in row.values for name in data_names_list), axis=1)]
+            return matched_rows.to_dict(orient='records') if not matched_rows.empty else None
+        except FileNotFoundError:
+            return None
+        except Exception as e:
+            return json.dumps({"error": str(e)}, ensure_ascii=False)
+
+    # 如果输入的 csv_filename 无效或查询结果为空，则遍历其他文件
+    if csv_filename not in valid_filenames or not (result := fetch_data(csv_filename)):
+        for file in valid_filenames:
+            if file != csv_filename:
+                result = fetch_data(file)
+                if result:
+                    break
+
+    return result if result else json.dumps({"error": "No relevant data found."}, ensure_ascii=False)
 
 
-        # 查找包含指定数据名称的行
-        matched_rows = df[df.apply(lambda row: any(data_name in row.values for data_name in data_names), axis=1)]
-        print(matched_rows)
-        # 如果有匹配的行，返回数据和基本信息
-        if not matched_rows.empty:
-            raw_data = matched_rows.to_dict(orient='records')
-            data_intro = {'length': len(raw_data), 'keys': list(matched_rows.columns)}
-            print(data_intro)
-            return raw_data
-        else:
-            data_intro = {'length': 0}
-            print(data_intro)
-            return []
-
-    except FileNotFoundError:
-        return json.dumps({"error": "CSV file not found."}, ensure_ascii=False)
-    except Exception as e:
-        return json.dumps({"error": str(e)}, ensure_ascii=False)
-def get_parking(name,address,n):
+def get_parking(name,address,number):
     latitude, longitude=address
     """
     Find the nearest n locations to the given latitude and longitude.
@@ -188,14 +209,15 @@ def get_parking(name,address,n):
     df['distance'] = df.apply(calculate_distance, axis=1)
 
     # Sort by distance and select the top n rows
-    nearest_locations = df.nsmallest(n, 'distance')
+    nearest_locations = df.nsmallest(number, 'distance')
 
     result = [{
         "reference_point_name": name,
-        "reference_point_location": {"latitude": latitude, "longitude": longitude},
+        "reference_point_location": {"latitude": latitude, "longitude": longitude, 'address':get_street_name(latitude,longitude)},
         "nearest_locations": nearest_locations.to_dict(orient='records')
     }]
-
+    for parking in result[0]['nearest_locations']:
+        parking['address']=get_street_name(parking['latitude'],parking['longitude'])
     return result
 
 
@@ -203,7 +225,12 @@ def get_parking(name,address,n):
 def plan_routes(start_longitude, start_latitude, end_longitude, end_latitude):
     best_3_routes = plan_routes_function(start_longitude, start_latitude, end_longitude, end_latitude, k=3)
     return best_3_routes
-# get_data("Viby Bibliotek",'events')
+# latitude = 56.1527   # 北京纬度
+# longitude = 10.197  # 北京经度
+#
+# street = get_street_name(latitude, longitude)
+# print(f"街道名称: {street}")
+# get_data("Viby Bibliotek",'parking')
 # start_longitude, start_latitude = 10.21284, 56.16184  # 北京天安门
 # end_longitude, end_latitude = 10.164431,56.130402 # 北京某地示例
 # #
@@ -242,10 +269,10 @@ def plan_routes(start_longitude, start_latitude, end_longitude, end_latitude):
 # library_location = get_data(['Tilst Bibliotek'], 'events')
 # # Assuming the location details are in the first element of the list
 # tilst_bibliotek_location = library_location[0]
-#
-# # Step 2: Use the latitude and longitude from Tilst Bibliotek to find parking nearby
+# #
+# # # Step 2: Use the latitude and longitude from Tilst Bibliotek to find parking nearby
 # latitude = tilst_bibliotek_location['latitude']
 # longitude = tilst_bibliotek_location['longitude']
-#
+# #
 # searched_result = get_parking('name',(latitude, longitude), 5)
 # print(searched_result)

@@ -82,7 +82,7 @@ def get_data_prompt(data_info,route_plan):
         """
     else:
         route_plan_prompt="""
-    如果要查找某个地方附近的停车场，可以直接调用
+    如果要查找某个地方附近的停车场，可以直接调用下面的函数，如果没有说最近的几个停车场，默认number=1
     get_parking(place_name, (latitude, longitude),number)
     Return [parking list..]
         """
