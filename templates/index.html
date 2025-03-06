@@ -255,9 +255,49 @@
             max-width: 100px;
             max-height: 100px;
         }
+        /* 容器样式调整为横排 */
+        #file-list {
+            display: flex;
+            flex-wrap: wrap; /* 允许换行 */
+            gap: 10px; /* 元素间距 */
+        }
+        .file-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 50px; /* 缩小宽度 */
+        }
+        .file-icon {
+            width: 40px; /* 缩小图标宽度 */
+            height: 50px; /* 缩小图标高度 */
+            background-color: #f0f0f0;
+            border: 1px solid #ccc;
+            border-radius: 3px; /* 缩小圆角 */
+            position: relative;
+        }
+        .file-icon::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 12px; /* 缩小折角 */
+            height: 12px;
+            background-color: #bbb;
+            clip-path: polygon(0 0, 100% 0, 100% 100%);
+        }
+        .file-name {
+            margin-top: 3px; /* 减小间距 */
+            font-family: Arial, sans-serif;
+            font-size: 12px; /* 缩小字体 */
+            color: #333;
+            text-align: center;
+            word-wrap: break-word;
+            max-width: 100%;
+        }
     </style>
 </head>
 <body>
+<div id="file-list"></div>
 <div class="chat-container">
     <div class="messages" id="messages">
         <!-- Messages will be appended here -->
@@ -338,10 +378,33 @@
 
                 if (hasCSV) {
                     // Show file icon for CSV files
+
+
+                    // const uploadedFiles = files; // 获取所有选择的文件
+                    const formData = new FormData(); // 创建 FormData 对象用于发送文件
                     fileIcon.style.display = 'inline-block';
                     fileCount.textContent = uploadedFiles.length;
                     thumbnailImage.style.display = 'none';
-                } else {
+
+                    // 将所有文件添加到 FormData
+                    for (let i = 0; i < uploadedFiles.length; i++) {
+                        formData.append('file', uploadedFiles[i]); // 'file' 与后端 request.files['file'] 对应
+                    }
+
+                    // 调用后端 /upload 路由
+                    fetch('/upload', {
+                        method: 'POST',
+                        body: formData // 直接发送 FormData，不需要设置 Content-Type，浏览器会自动处理
+                    })
+                        .then(response => response.text()) // 获取后端返回的文本响应
+                        .then(data => {
+                            console.log(data); // 打印后端返回的消息
+                            localStorage.setItem('uploadedFilesCount', uploadedFiles.length); // 保存文件数量到 localStorage
+                        })
+                        .catch(error => {
+                            console.error('上传失败:', error);
+                        });
+                } else { // 如果有多张图片
                     // Show first image preview if multiple images (no CSV)
                     const firstImage = files.find(file => file.type.startsWith('image/'));
                     if (firstImage) {
@@ -368,7 +431,31 @@
             }
         }
     });
+    function generateFileAnalysisMarkdown(fileNames) {
+        const fragment = document.createDocumentFragment();
 
+        fileNames.forEach(fileName => {
+            // 创建 container
+            const container = document.createElement("div");
+            container.className = "file-container";
+
+            // 创建图标
+            const icon = document.createElement("div");
+            icon.className = "file-icon";
+
+            // 创建文件名
+            const name = document.createElement("span");
+            name.className = "file-name";
+            name.textContent = fileName;
+
+            // 组装结构
+            container.appendChild(icon);
+            container.appendChild(name);
+            fragment.appendChild(container);
+        });
+
+        return fragment;
+    }
     removeImage.addEventListener('click', () => {
         imageInput.value = ""; // Clear input
         uploadedFiles = []; // Clear stored files
@@ -376,13 +463,13 @@
         thumbnailImage.style.display = 'none';
         fileIcon.style.display = 'none';
         // Clear localStorage
-        localStorage.removeItem('uploadedFilesCount');
-        for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i);
-            if (key && key.startsWith('uploadedFile_')) {
-                localStorage.removeItem(key);
-            }
-        }
+        // localStorage.removeItem('uploadedFilesCount');
+        // for (let i = 0; i < localStorage.length; i++) {
+        //     const key = localStorage.key(i);
+        //     if (key && key.startsWith('uploadedFile_')) {
+        //         localStorage.removeItem(key);
+        //     }
+        // }
     });
 
     function createMessageElement(text, image, isUser) {
@@ -398,10 +485,10 @@
 
         if (isUser) {
             // 如果 image 存在且有效
-            if (image.type.toString().includes('image')) {
+            if (image[0].type.toString().includes('image')) {
                 try {
                     const imageElement = document.createElement('img');
-                    imageElement.src = URL.createObjectURL(image); // 创建对象 URL
+                    imageElement.src = URL.createObjectURL(image[0]); // 创建对象 URL
                     imageElement.classList.add('image-preview');
                     messageElement.appendChild(imageElement);
                     const textElement = document.createElement('div');
@@ -413,9 +500,13 @@
                 }
             }else
             {
+                const fileNames = Array.from(image).map(file => file.name.toString());
                 const textElement = document.createElement('div');
                 textElement.classList.add('text');
                 textElement.textContent = text;
+                file_name_icon=generateFileAnalysisMarkdown(fileNames);
+                console.log(file_name_icon);
+                messageElement.appendChild(file_name_icon);
                 messageElement.appendChild(textElement);
                 // messageElement.appendChild(iconElement);
             }
@@ -447,12 +538,17 @@
 
 
     sendButton.addEventListener('click', async () => {
+        // imageInput.value = ""; // Clear input
+        // uploadedFiles = []; // Clear stored files
+        thumbnailContainer.style.display = 'none';
+        thumbnailImage.style.display = 'none';
+        fileIcon.style.display = 'none';
         const messageText = messageInput.value.trim();
-        const file = imageInput.files[0] || previousFile; // 使用当前文件或之前的文件
-        console.log("file",file.type.toString() )
-        // if (!messageText && !file) return; // 没有文本和文件时不发送
+        const files = imageInput.files; // 获取所有文件
+        console.log("files", files.length);
 
-        const userMessage = createMessageElement(messageText, file, isRight);
+        // Scroll to the bottom
+        const userMessage = createMessageElement(messageText, files, isRight);
         messagesContainer.appendChild(userMessage);
 
         // Scroll to the bottom
@@ -461,19 +557,28 @@
 
         // 清空输入
         messageInput.value = '';
-        imageInput.value = ''; // 清空文件输入
-        previousFile = file ? file : null; // 更新之前上传的文件
+        // imageInput.value = ''; // 清空文件输入
+        console.log("files length:", files.length);
+        console.log("files content:", files);
+        previousFile = files.length > 0 ? files[0] : null; // 更新 previousFile 为第一个文件（如果有）
 
         if (isRight) {
             try {
-                // Prepare data to be sent
-                const formData = new FormData();
-                formData.append('message', messageText);
-                formData.append('file', file.type.toString() || null); // 如果没有文件，则设置为 null
-
+                // 构造 formData，将所有文件的类型和路径作为数组
+                const formData = {
+                    message: messageText,
+                    files: files.length > 0 ? Array.from(files).map(file => ({
+                        type: file.type.toString(),
+                        file_path: file.name.toString()
+                    })) : null
+                };
+                console.log(formData)
                 const response = await fetch('/generate_ui', {
                     method: 'POST',
-                    body: formData,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData),
                 });
 
                 const data = await response.json();

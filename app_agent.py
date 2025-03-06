@@ -2,6 +2,7 @@
 from agent_workflow import *
 from flask import Flask, request, jsonify, session, render_template
 from flask_session import Session
+from read_files import *
 from prompt_py import *
 app = Flask(__name__)
 
@@ -15,11 +16,6 @@ def process_symbol(s):
         return '\n'.join(lines[1:-1])  # 删除第一行和最后一行
     return s
 # Mock processing function
-def process_message(message):
-    # Example: Convert message to uppercase as the processing logic
-    result=api_answer(message)
-
-    return result
 
 @app.before_request
 def initialize_session():
@@ -46,21 +42,10 @@ def send_message():
     session['messages'].append(message_template('user', user_message))
 
     # Append the message to the user's session list
-    if str(user_message).startswith("修改"):
-
-        session.modified = True
-        print(session['messages'])
-        # Process the message
-        response_message = process_message(session['messages'])
-        new_html=update_js_arrays(response_message,session['replacements_json'])
-
-        # response_message = "text"
-        session['messages'].append(message_template('assistant',response_message))
-        response_message=new_html
-    else:
-        response_message,html_template,session['replacements_json']=generate_response(user_message)
-        session['messages'].append(message_template('assistant', html_template))
-    response_message=process_symbol(response_message)
+    response_message=''
+    # data_got = iterative_agent(user_message)
+    # html_generate_agent(aa, query)
+    # response_message=process_symbol(response_message)
     # Return the processed message
     return jsonify({"response": response_message})
 

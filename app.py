@@ -1,4 +1,3 @@
-
 import supervision as sv
 from flask import Flask, request, jsonify, session, render_template, make_response
 from flask_session import Session
@@ -20,7 +19,7 @@ from lama_inpaint import inpaint_img_with_lama
 from stable_diffusion_inpaint import fill_img_with_sd
 from utils import *
 from sam_segment import predict_masks_with_sam
-
+from read_files import *
 
 prev_object_class = None
 prev_image_data = None
@@ -37,7 +36,8 @@ GROUNDING_DINO_CONFIG_PATH = r"GroundingDINO_SwinT_OGC.py"
 GROUNDING_DINO_CHECKPOINT_PATH = r"groundingdino_swint_ogc.pth"
 SAM_ENCODER_VERSION = "vit_h"
 SAM_CHECKPOINT_PATH = r"sam_vit_h_4b8939.pth"
-grounding_dino_model = Model(model_config_path=GROUNDING_DINO_CONFIG_PATH, model_checkpoint_path=GROUNDING_DINO_CHECKPOINT_PATH)
+grounding_dino_model = Model(model_config_path=GROUNDING_DINO_CONFIG_PATH,
+                             model_checkpoint_path=GROUNDING_DINO_CHECKPOINT_PATH)
 sam = sam_model_registry[SAM_ENCODER_VERSION](checkpoint=SAM_CHECKPOINT_PATH)
 sam.to(device=DEVICE)
 sam_predictor = SamPredictor(sam)
@@ -75,14 +75,14 @@ def object_segment(image, CLASSES):
         text_threshold=TEXT_THRESHOLD
     )
     nms_idx = torchvision.ops.nms(
-        torch.from_numpy(detections.xyxy), 
-        torch.from_numpy(detections.confidence), 
+        torch.from_numpy(detections.xyxy),
+        torch.from_numpy(detections.confidence),
         NMS_THRESHOLD
     ).numpy().tolist()
     box_annotator = sv.BoxAnnotator()
     labels = [
-        f"{CLASSES[class_id]} {confidence:0.2f}" 
-        for _, _, confidence, class_id, _, _ 
+        f"{CLASSES[class_id]} {confidence:0.2f}"
+        for _, _, confidence, class_id, _, _
         in detections]
     print(f"Before NMS: {len(detections.xyxy)} boxes")
     detections.xyxy = detections.xyxy[nms_idx]
@@ -111,22 +111,22 @@ def process_symbol(s):
 
 
 def process_message(message):
-    result=chat_single(message)
+    result = chat_single(message)
     return result
 
 
 @app.before_request
 def initialize_session():
     if 'option_messages' not in session:
-        session['option_messages'] = []  
-    # if 'ui_messages' not in session:
-    #     session['ui_messages'] = []  
-        
-    session['ui_messages'] = []  
+        session['option_messages'] = []
+        # if 'ui_messages' not in session:
+    #     session['ui_messages'] = []
+
+    session['ui_messages'] = []
     session['pure_text'] = []
     session['data_agent_messages'] = []  # Initialize an empty list for messages
-    session['data_agent_replacements_json']= []  # Initialize an empty list for messages
-    # session['data_agent_messages'].append(message_template('system',system_prompt))# 
+    session['data_agent_replacements_json'] = []  # Initialize an empty list for messages
+    # session['data_agent_messages'].append(message_template('system',system_prompt))#
 
 
 @app.route('/')
@@ -197,11 +197,11 @@ def option(user_message):
     """
     session['option_messages'].append(message_template('system', system_prompt))
     session['option_messages'].append(message_template('user', user_message))
-    response=chat_single(session['option_messages'], "json")
+    response = chat_single(session['option_messages'], "json")
     try:
         response = json.loads(response)
     except:
-        print(response,'json error')
+        print(response, 'json error')
     print(response)
     return response
 
@@ -248,31 +248,32 @@ def process_image(image_data, object_class, point_coords=None, is_remove=False):
         header, base64_data = image_data.split(',', 1)
     else:
         return "Invalid image format", 400
-    
+
     image = base64.b64decode(base64_data)
     image_pil = load_img_to_array(image)
     image_cv = np.frombuffer(image, np.uint8)
     image_cv = cv2.imdecode(image_cv, cv2.IMREAD_COLOR)
 
-    if point_coords:  
-        masks, _, _ = predict_masks_with_sam(predictor=sam_predictor, img=image_pil, point_coords=[point_coords], point_labels=[1])
+    if point_coords:
+        masks, _, _ = predict_masks_with_sam(predictor=sam_predictor, img=image_pil, point_coords=[point_coords],
+                                             point_labels=[1])
     elif object_class:
         masks = object_segment(image_cv, object_class)
-    
+
     masks = masks.astype(np.uint8) * 255
     dilate_masks = [dilate_mask(mask, 15) for mask in masks]
 
     for idx, mask in enumerate(dilate_masks):
         image_pil = inpaint_img_with_lama(
             image_pil, mask, LAMA_CONFIG, LAMA_CKPT, device=DEVICE)
-        
+
     completed_image = Image.fromarray(image_pil.astype(np.uint8))
     buffered = BytesIO()
     completed_image.save(buffered, format="JPEG")
     completed_image.save("process.jpg", format="JPEG")
     buffered.seek(0)
     completed_image = base64.b64encode(buffered.getvalue()).decode('utf-8')
-    
+
     if not is_remove:
         masked_image = apply_mask_with_transparency(image_cv, masks[0])
         mask_image = Image.fromarray(masked_image, 'RGBA')
@@ -286,7 +287,7 @@ def process_image(image_data, object_class, point_coords=None, is_remove=False):
             "mask_image": f"data:image/png;base64,{mask_data}"
         }
     else:
-        return{
+        return {
             "modified_image": f"data:image/jpeg;base64,{completed_image}"
         }
 
@@ -365,7 +366,7 @@ def recolor():
         prev_masks = masks
     else:
         masks = prev_masks
-    target_color_rgb = hex_to_rgb(data['AdjustmentValue'])  
+    target_color_rgb = hex_to_rgb(data['AdjustmentValue'])
     target_color_hsv = cv2.cvtColor(np.uint8([[target_color_rgb]]), cv2.COLOR_RGB2HSV)[0][0]
     hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     h, s, v = cv2.split(hsv_image)
@@ -423,7 +424,7 @@ def brightness():
     image_pil = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
     final_image = image_pil.copy()
     for mask in masks:
-        mask_pil = Image.fromarray(mask).convert("L")  
+        mask_pil = Image.fromarray(mask).convert("L")
         image_masked = image_pil.copy()
         enhancer = ImageEnhance.Brightness(image_masked)
         image_adjusted = enhancer.enhance(ad_value)
@@ -474,7 +475,7 @@ def contrast():
     image_pil = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
     final_image = image_pil.copy()
     for mask in masks:
-        mask_pil = Image.fromarray(mask).convert("L")  
+        mask_pil = Image.fromarray(mask).convert("L")
         image_masked = image_pil.copy()
         enhancer = ImageEnhance.Contrast(image_masked)
         image_adjusted = enhancer.enhance(ad_value)
@@ -525,7 +526,7 @@ def saturation():
     image_pil = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
     final_image = image_pil.copy()
     for mask in masks:
-        mask_pil = Image.fromarray(mask).convert("L")  
+        mask_pil = Image.fromarray(mask).convert("L")
         image_masked = image_pil.copy()
         enhancer = ImageEnhance.Color(image_masked)
         image_adjusted = enhancer.enhance(ad_value)
@@ -546,18 +547,20 @@ def saturation():
 def generate_ui():
     session['ui_messages'] = []
     user_message = request.form['message']
-    query_file='text'
+    query_file = 'text'
+    file_info = None
     try:
-        file_info = request.form['file']
-        if 'image' in file_info:
-            query_file='image'
+        file_info = request.form['files']
+        if 'image' in file_info[0]['type']:
+            query_file = 'image'
+
         else:
-            query_file='csv'
+            query_file = 'csv'
 
         # print('image',image)
     except:
-        query_file=None
-    if query_file=='image':
+        query_file = None
+    if query_file == 'image':
         result = option(user_message)
         adjustment_type = result["Adjustment Type"]
         object_class = result.get("Object Class", None)
@@ -572,7 +575,7 @@ def generate_ui():
             You are an expert UI design assistant specialized in generating aesthetically pleasing, simple, direct,
             and user-friendly HTML pages tailored to specific image editing tasks as per user requests. 
             Your task is to generate complete, functional HTML code embedded with CSS and JavaScript based on the individual needs of each user.
-    
+
             **Guidelines**:
             1. The layout should be intuitive and clear, facilitating quick familiarity and ease of use for users.
             2. For the operation '{adjustment_type}', decide on the most suitable form of interactive elements (such as sliders, color pickers, etc.) that best facilitate user interaction and achieve the desired effect. Avoid using dropdowns and text inputs as much as possible to ensure all elements are directly visible and intuitive to use. Use the provided adjustment options: {adjustment_options}. All necessary controls should be directly visible and accessible within the page. If a slider is generated, ensure it allows continuous adjustment by providing appropriate min, max, and step values.
@@ -592,7 +595,7 @@ def generate_ui():
         session['ui_messages'].append(message_template('system', system_prompt))
         session['ui_messages'].append(message_template('user', user_message))
         ui_response = [process_symbol(chat_single(session['ui_messages']))]
-        var_template="""
+        var_template = """
 {adjustment_type}	recolor
 {adjustment_options}	['#98FB98', '#7CFC00', '#00FF00', '#32CD32', '#008000', '#006400', '#228B22', '#006400']
 {object_class}	hair
@@ -600,65 +603,17 @@ def generate_ui():
 {ui_effect}	The UI includes a color picker or slider that allows users to select different shades of green. Users can see live previews of how each shade affects the hair.
 {user_message}	change hair color to green
         """
-        print("system_prompt",system_prompt)
+        print("system_prompt", system_prompt)
         # session['ui_messages'].append(message_template('system', system_prompt))
         # session['ui_messages'].append(message_template('user', "generate the appropriate UI"))
         # ui_response = process_symbol(chat_single(session['ui_messages']))
-    elif query_file=='csv':
-        mission_plan_list=[]
-        ui_response = []
-        mission_plan_list.append(message_template('system', """
-You need to break down the task to basic queries below and answer one sub-question at a time.  
-The most basic queries include:  
+    elif query_file == 'csv':
 
-weather related:
-- **Listing events/activities** under certain weather conditions  (like events in good weather and low pollution) 
-location related:
-- **Route planning** from one place to another  
-- **Finding the nearest parking places** to a certain place (keep the nearest number in the query)   
-- **show data relationships** between two pieces of data  
-
-For example, if a user wants to find the nearest parking lot to a certain place and display navigation to it, follow this approach:  
-
-1. First, answer **"What is the nearest parking lot to a certain place?"**  
-2. After obtaining the result, proceed to **"What is the navigation from this place to the parking lot?"**  
-
-
-
-If the current step is the **final step**, set key final_step as true  
-If the query itself is **already a basic query**, then the **first step is the final step**.  
-
-
-Each response should only contain **one** sub-question at a time, formatted as below:  
-
-**explain why this step is or is not final step**
-```json
-{
-  "this_step_task_query": "query",
-  "final_step":false
-}
-```
-        """))
-
-        mission_plan_list.append(message_template('user', user_message))
-        final_step = False
-        while not final_step:
-            mission_answer = chat_single(mission_plan_list,'json_few_shot')
-            print(mission_answer)
-            if 'final_step' in mission_answer:
-                final_step = mission_answer['final_step']
-
-
-            if 'this_step_task_query' in mission_answer:
-                step_query=mission_answer['this_step_task_query']
-                response_message, html_template, session['data_agent_replacements_json'],searched_result= generate_response(step_query)
-                if 'garagecode' in str(searched_result):
-                    searched_result=f'searched parking places: {str(extract_garagecodes(searched_result))}'
-                mission_plan_list.append(message_template('user', 'searched_result: ' + str(searched_result)))
-                print('searched_ result: ' + str(searched_result))
-
-                session['data_agent_messages'].append(message_template('assistant', html_template))
-                ui_response .append(process_symbol(response_message))
+        file_list = []
+        for file in file_info:
+            file_list.append(file['file_path'])
+        data_got = iterative_agent(user_message, file_list)
+        ui_response = [html_generate_agent_modified(data_got, user_message)]
 
 
     else:
@@ -675,4 +630,4 @@ def add_security_headers(response):
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0',port='6060')
+    app.run(host='0.0.0.0', port='6060')
