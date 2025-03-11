@@ -47,7 +47,7 @@ def execute_code(code_str):
     return code_result
 
 
-def iterative_agent(query,test_files,str_test=None):
+def iterative_agent(query, test_files, str_test=None):
     ask_prompt = """
 You are a data-processing intelligent assistant. Users will ask you questions about the contents of CSV files in the current directory, requiring you to solve problems through multiple rounds of analysis and computation. Your tasks include:
 
@@ -63,6 +63,7 @@ Avoid redundant fields, keeping only the necessary information.
 Each code snippet should be clearly written to help users understand your thought process.
 Assume that the mentioned CSV files exist in the current directory and can be read using pandas (e.g., pd.read_csv("filename.csv")).
 Now, proceed with processing based on the user's query following these steps.
+Please only give one piece of python code at one session.
     """
     # test_files = ["weather.csv", "events.csv"]
     file_short = csv_to_json(test_files)
@@ -73,18 +74,20 @@ Now, proceed with processing based on the user's query following these steps.
     print(query_total)
     code_result = ""
     messages = messgae_initial_template(ask_prompt, query_total)
-    code_return=''
+    code_return = ''
     while 'final_answer' not in code_result:
         code_result = chat_single(messages)
         # code_result = str_test
         print("response", code_result)
         messages.append(message_template('assistant', code_result))
-        code_return = execute_code(extract_words(code_result, 'python'))
+        code_return = execute_and_display(code_result)
         print("code_return", code_return)
         messages.append(message_template('user', code_return))
     return code_return
-def html_generate_agent(data_input,query):
-    ask_prompt="""
+
+
+def html_generate_agent(data_input, query):
+    ask_prompt = """
  
 You are an HTML-generating intelligent assistant (visualization agent). Your task is to generate corresponding HTML code to visualize data based on JSON-formatted data provided by the data processing agent. Users will indirectly provide questions and data through the data processing agent, and you need to:
 
@@ -117,11 +120,15 @@ Provide a brief explanation of the HTML's functionality and the visualization me
     messages = messgae_initial_template(ask_prompt, query_total)
     code_result = chat_single(messages)
     return code_result
+
+
 # aa="""
 # code_return {'good_weather_events': [{'date': '2014-08-01', 'city': 'Aarhus', 'title': 'International Playgroup', 'library': 'Hovedbiblioteket', 'longitude': 10.200179, 'latitude': 56.156617}, {'date': '2014-08-09', 'city': 'Viby J', 'title': 'Bustur til Store Bogdag ved Hald Hovedgaard lÃ¸rdag 9. august', 'library': 'Viby Bibliotek', 'longitude': 10.164431, 'latitude': 56.130402}, {'date': '2014-08-09', 'city': 'Aarhus', 'title': 'ByggelÃ¸rdag', 'library': 'Hovedbiblioteket', 'longitude': 10.200179, 'latitude': 56.156617}, {'date': '2014-08-01', 'city': 'Viby J', 'title': 'Artmoney â\x80?penge med dobbeltvÃ¦rdi ', 'library': 'Viby Bibliotek', 'longitude': 10.164431, 'latitude': 56.130402}]}
 #
 # """
-# query='我想知道天气好的时候有啥活动'
-# iterative_agent(query)
+file_list = [r'uploads\pollutionData204273.csv', r'uploads\trafficData158324.csv']
+query = "what's the pollution and traffic in different time periods?"
+aa = iterative_agent(query, file_list)
+print(aa)
 # html_generate_agent(aa,query)
 # print(execute_code(extract_words(aa,'python')))/

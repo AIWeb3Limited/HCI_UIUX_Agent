@@ -613,7 +613,7 @@ def generate_ui():
         for file in file_info:
             file_list.append(file['file_path'])
         data_got = iterative_agent(user_message, file_list)
-        ui_response = [html_generate_agent_modified(data_got, user_message)]
+        ui_response = [html_generate_agent(data_got, user_message)]
 
 
     else:
