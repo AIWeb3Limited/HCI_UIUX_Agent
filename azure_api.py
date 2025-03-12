@@ -3,6 +3,7 @@ import os
 import re
 import ast
 import sys
+import traceback
 from io import StringIO
 from openai import AzureOpenAI
 from dotenv import load_dotenv
@@ -161,6 +162,14 @@ def is_valid_variable_line(code_part):
                 return False
 
     return True
+def extract_python_code(input_str):
+    # 使用正则表达式匹配 ```python ``` 包裹的代码块
+    pattern = r"```python\s*\n(.*?)\n```"
+    match = re.search(pattern, input_str, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    else:
+        raise ValueError("No ```python``` code block found in the input string.")
 def extract_code_blocks(code_str):
     code_blocks = []
     code_result = []
@@ -188,6 +197,8 @@ def messgae_initial_template(ask_prompt,query):
     messages.append(message_template('system',ask_prompt))
     messages.append(message_template('user',query))
     return messages
+
+
 def execute_and_display(code_str, local_vars=None):
     if local_vars is None:
         local_vars = {}
@@ -202,7 +213,8 @@ def execute_and_display(code_str, local_vars=None):
 
         # 如果 AST 的 body 为空，直接返回
         if not tree.body:
-            return None
+            output = sys.stdout.getvalue()
+            return output if output else None
 
         # 分离最后一行（可能是表达式）和前面的语句
         if len(tree.body) > 1:
@@ -211,26 +223,26 @@ def execute_and_display(code_str, local_vars=None):
         else:
             last_node = tree.body[0]
 
-        # 如果最后一行是表达式（如 pollution_data.head()），单独执行并获取结果
+        # 如果最后一行是表达式，单独执行并获取结果
         if isinstance(last_node, ast.Expr):
             result = eval(compile(ast.Expression(last_node.value), "<ast>", "eval"), local_vars)
-            # 如果有输出（比如 print 调用），获取缓冲区的输出
+            # 获取缓冲区的输出（包括 print 调用和自动显示的内容）
             output = sys.stdout.getvalue()
-            if output:
-                print(output, end="")
-            # 如果结果不是 None，显示它
-            if result is not None:
-                # 对于 Pandas DataFrame/Series，调用其 __str__ 方法
-                if hasattr(result, "__str__"):
-                    print(result)
-            return result
+            # 如果结果不是 None，附加到输出
+            if result is not None and hasattr(result, "__str__"):
+                output += str(result) + "\n"
+            return output if output else result
         else:
             # 如果不是表达式，直接执行整个代码
             exec(code_str, local_vars)
             output = sys.stdout.getvalue()
-            if output:
-                print(output, end="")
-            return None
+            return output if output else None
+
+    except Exception:
+        # 捕获异常并返回完整的 Traceback 和之前的输出
+        output = sys.stdout.getvalue()
+        error_msg = traceback.format_exc()
+        return output + error_msg if output else error_msg
 
     finally:
         # 恢复标准输出

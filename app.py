@@ -612,9 +612,11 @@ def generate_ui():
         file_list = []
         for file in file_info:
             file_list.append(file['file_path'])
-        data_got = iterative_agent(user_message, file_list)
-        ui_response = [html_generate_agent(data_got, user_message)]
-
+        data_got,data_status = iterative_agent(user_message, file_list)
+        if data_status:
+            ui_response = [html_generate_agent_modified(data_got, user_message)]
+        else:
+            ui_response=[data_got]
 
     else:
         session['pure_text'].append(message_template('system', ''))
