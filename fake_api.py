@@ -216,35 +216,6 @@ def extract_python_code(input_str):
         return match.group(1).strip()
     else:
         raise ValueError("No ```python``` code block found in the input string.")
-def extract_code_blocks(code_str):
-    code_blocks = []
-    code_result = []
-    if '```python' in code_str:
-        parts = code_str.split("```python")
-        for part in parts[1:]:  # 跳过第一个部分，因为它在第一个代码块之前
-            code_block = part.split("```")[0]
-
-
-
-            code_blocks.append(code_block)
-        code_str=code_blocks[0]
-        for code_part in code_str.split('\n'):
-            # 匹配只包含变量名的行（只包含字母、数字、下划线，且不含运算符等）
-            if is_valid_variable_line(code_part):
-                code_piece = f'print({code_part.strip()})'
-            else:
-                code_piece=code_part
-            code_result.append(code_piece)
-        # print(code_result)
-        return "\n".join(code_result)
-    return code_str
-def messgae_initial_template(ask_prompt,query):
-    messages=[]
-    messages.append(message_template('system',ask_prompt))
-    messages.append(message_template('user',query))
-    return messages
-
-
 def execute_and_display(code_str, local_vars=None):
     if local_vars is None:
         local_vars = {}

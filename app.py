@@ -14,7 +14,6 @@ from groundingdino.util.inference import Model
 from segment_anything import sam_model_registry, SamPredictor
 import base64
 from io import BytesIO
-from agent_workflow import *
 from lama_inpaint import inpaint_img_with_lama
 from stable_diffusion_inpaint import fill_img_with_sd
 from utils import *
@@ -29,15 +28,20 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your_secret_key'
 app.config['SESSION_TYPE'] = 'filesystem'  # Use filesystem-based sessions
 Session(app)
+app.secret_key = 'secret_key'  # 用于启用 flash() 方法发送消息
+UPLOAD_FOLDER = 'uploads'
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+
 
 # GroundingDINO+SAM configuration
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-GROUNDING_DINO_CONFIG_PATH = r"GroundingDINO_SwinT_OGC.py"
-GROUNDING_DINO_CHECKPOINT_PATH = r"groundingdino_swint_ogc.pth"
+GROUNDING_DINO_CONFIG_PATH = r"/home/ec2-user/Grounded-Segment-Anything/GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py"
+GROUNDING_DINO_CHECKPOINT_PATH =r"pretrained_models/groundingdino_swint_ogc.pth"
 SAM_ENCODER_VERSION = "vit_h"
-SAM_CHECKPOINT_PATH = r"sam_vit_h_4b8939.pth"
+SAM_CHECKPOINT_PATH = r"pretrained_models/sam_vit_h_4b8939.pth"
 grounding_dino_model = Model(model_config_path=GROUNDING_DINO_CONFIG_PATH,
-                             model_checkpoint_path=GROUNDING_DINO_CHECKPOINT_PATH)
+                             model_checkpoint_path=GROUNDING_DINO_CHECKPOINT_PATH,device=DEVICE)
 sam = sam_model_registry[SAM_ENCODER_VERSION](checkpoint=SAM_CHECKPOINT_PATH)
 sam.to(device=DEVICE)
 sam_predictor = SamPredictor(sam)
@@ -61,7 +65,38 @@ def segment(sam_predictor: SamPredictor, image: np.ndarray, xyxy: np.ndarray) ->
         index = np.argmax(scores)
         result_masks.append(masks[index])
     return np.array(result_masks)
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    # 检查请求中是否包含文件
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
 
+    files = request.files.getlist('file')  # 获取多个文件
+    if not files or all(file.filename == '' for file in files):
+        return jsonify({'error': 'No selected files'}), 400
+
+    uploaded_paths = []
+    try:
+        # 处理每个上传的文件
+        for file in files:
+            if file and file.filename:
+                # 使用 secure_filename 确保文件名安全
+                from werkzeug.utils import secure_filename
+                filename = secure_filename(file.filename)
+                file_path = os.path.join(UPLOAD_FOLDER, filename)
+                file.save(file_path)
+                uploaded_paths.append(file_path)
+
+        # 返回成功的响应，包括上传的文件路径数组和文件数量
+        response = {
+            'message': 'Files uploaded successfully',
+            'file_paths': uploaded_paths,
+            'count': len(uploaded_paths)
+        }
+        return jsonify(response), 200
+
+    except Exception as e:
+        return jsonify({'error': f'Upload failed: {str(e)}'}), 500
 
 def object_segment(image, CLASSES):
     if "the" not in CLASSES:
@@ -546,11 +581,13 @@ def saturation():
 @app.route('/generate_ui', methods=['POST'])
 def generate_ui():
     session['ui_messages'] = []
-    user_message = request.form['message']
+    data = request.get_json()
+    user_message = data['message']
     query_file = 'text'
     file_info = None
     try:
-        file_info = request.form['files']
+        file_info = data['files']
+        print(file_info)
         if 'image' in file_info[0]['type']:
             query_file = 'image'
 
@@ -611,7 +648,7 @@ def generate_ui():
 
         file_list = []
         for file in file_info:
-            file_list.append(file['file_path'])
+            file_list.append('uploads/'+file['file_path'])
         data_got,data_status = iterative_agent(user_message, file_list)
         if data_status:
             ui_response = [html_generate_agent_modified(data_got, user_message)]

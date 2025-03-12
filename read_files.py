@@ -52,7 +52,7 @@ def execute_code(code_str):
 def iterative_agent(query, test_files, str_test=None):
     ask_prompt = """
 You are a data-processing intelligent assistant. Users will ask you questions about the contents of CSV files in the current directory, requiring you to solve problems through multiple rounds of analysis and computation. Your tasks include:
-
+Your responsibility is only provide data for drawing but not drawing graph itself. If user ask you to draw a graph, please do not draw it.
 Understanding the user's question about the CSV file and analyzing it step by step.
 In each round, writing a Python snippet using pandas to process the CSV file and advance the solution.(```python as the first line and ``` as the last line).
 Always give a piece of python code unless you think there is no need to write code.
@@ -103,7 +103,8 @@ User question: {query}
         if '```python' not in code_result or 'final_answer' in code_result:
             if '```python' not in code_result:
                 data_got_status=False
-            break
+            if 'traceback' not in code_return.lower():
+                break
     return code_return,data_got_status
 
 
@@ -161,11 +162,11 @@ In the output explanation, only explain the received data without explaining the
 #
 # unique_weather, temperature_stats, wind_speed_stats
 # ```
-# """
-test_files = ["uploads/pollutionData204273.csv", "uploads/trafficData158324.csv"]
-query = "what's the pollution and traffic in different time periods?"
-aa,data_got_status= iterative_agent(query, test_files)
-html_generate_agent_modified(aa,query)
+# # """
+# test_files = ["uploads/pollutionData204273.csv", "uploads/trafficData158324.csv"]
+# query = "what's the pollution and traffic in different time periods?"
+# aa,data_got_status= iterative_agent(query, test_files)
+# html_generate_agent_modified(aa,query)
 # print(execute_code(extract_words(aa,'python')))
 # with open('./uploads/aarhus_parking (1).csv','r') as f:
 #    for i in f:
