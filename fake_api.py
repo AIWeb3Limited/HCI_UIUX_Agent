@@ -1,22 +1,23 @@
 import http.client
-import json
-import re
-import time
-
-import json
 import os
+import time
+import json
 import re
 import ast
 import sys
 import traceback
 from io import StringIO
+from dotenv import load_dotenv
+load_dotenv()
+
+fake_api=os.getenv('hub_api_key')
 def message_template(role,new_info):
     new_dict={'role':role,'content':new_info}
     return new_dict
 def chat_single(messages,mode="",model=None,verbose=False,temperature=0):
     conn = http.client.HTTPSConnection("api.openai-hub.com")
     headers = {
-        'Authorization': 'Bearer sk-Nf0kLEmbRPRSFdD8qwlg1e7EHuoJMyaf1Z60Fh0IDLYosBEs',
+        'Authorization': f'Bearer {fake_api}',
         'Content-Type': 'application/json'
     }
 
@@ -68,10 +69,6 @@ def chat_single(messages,mode="",model=None,verbose=False,temperature=0):
             'temperature': temperature,
 
         })
-    # conn.request("POST", "/v1/chat/completions", payload, headers)
-    # res = conn.getresponse()
-    # data = res.read()
-    # result = json.loads(data.decode("utf-8"))
 
     MAX_RETRIES = 3  # 最大重试次数
     RETRY_DELAY = 2  # 重试间隔（秒）
@@ -100,7 +97,7 @@ def chat_single(messages,mode="",model=None,verbose=False,temperature=0):
             time.sleep(RETRY_DELAY)  # 等待一段时间后重试
         finally:
             conn.close()  # 确保连接被关闭
-def general_gpt_without_memory(query, messages=None,json_mode='',ask_prompt='',temperature=0,verbose=False):
+def general_gpt_without_memory(query, messages=None,json_mode='',system_prompt='',temperature=0,verbose=False):
     if isinstance(query, dict):
         query = str(query)
     if query == None:
@@ -108,62 +105,13 @@ def general_gpt_without_memory(query, messages=None,json_mode='',ask_prompt='',t
     if messages == None:
         messages = []
 
-
-    if messages == None:
-        messages = []
-
-    messages.append(message_template('system', ask_prompt))
+    messages.append(message_template('system', system_prompt))
     messages.append(message_template('user', str(query)))
     # result = chat_single(messages, '','gpt-4o-2024-05-13')
     result = chat_single(messages, json_mode,temperature=temperature,verbose=verbose)
     print('general_gpt result:', result)
     return result
-def stream_api_test(query, messages=None,json_mode='',ask_prompt=''):
 
-    if query == None:
-        return None
-    if messages == None:
-        messages = []
-
-
-    if messages == None:
-        messages = []
-    chunk_num = 0
-    messages.append(message_template('system', ask_prompt))
-    messages.append(message_template('user', str(query)))
-    # result = chat_single(messages, '','gpt-4o-2024-05-13')
-    chat_response =( chat_single(messages, 'stream'))
-    chunk_num = 0
-    in_code_block = False
-    code_block_start = "```python"
-    code_block_end = "```"
-    buffer = ""
-    line_buffer = ""
-    total_buffer = ""
-    total_char_list = []
-    yield_list=[]
-    chunk_num = 0
-    for chunk in chat_response:
-        if chunk is not None:
-            if chunk["choices"][0]["delta"].get("content") is not None:
-                if chunk_num == 0:
-                    char = "\n" + chunk["choices"][0]["delta"]["content"]
-                else:
-                    char = chunk["choices"][0]["delta"]["content"]
-                print(char, end="", flush=True)
-                chunk_num += 1
-
-    # for chunk in chat_response:
-    #     if chunk is not None:
-    #
-    #         if json_part.choices[0].delta.content is not None:
-    #             if chunk_num == 0:
-    #                 char = "\n" + chunk.choices[0].delta.content
-    #
-    #             else:
-    #                 char = chunk.choices[0].delta.content
-    #             print(char)
-# print(stream_api_test('who are you'))
 def extract_code_blocks(code_str):
     code_blocks = []
     code_result = []
@@ -185,10 +133,10 @@ def extract_code_blocks(code_str):
         # print(code_result)
         return "\n".join(code_result)
     return code_str
-def messgae_initial_template(ask_prompt,query):
+def messages_initial_template(system_prompt,user_query):
     messages=[]
-    messages.append(message_template('system',ask_prompt))
-    messages.append(message_template('user',query))
+    messages.append(message_template('system',system_prompt))
+    messages.append(message_template('user',user_query))
     return messages
 def extract_words(text,mode='json'):
     # 使用正则表达式提取 JSON 部分
@@ -289,3 +237,14 @@ def is_valid_variable_line(code_part):
                 return False
 
     return True
+
+# system_prompt=""
+# user_prompt="你是?"
+# messages=messages_initial_template(system_prompt=system_prompt,user_query=user_prompt)
+#
+# first_assistant_result=chat_single(messages)
+#
+# messages.append(message_template('assistant',first_assistant_result))
+# messages.append(message_template('user','second user query'))
+#
+# second_assistant_result=chat_single(messages)

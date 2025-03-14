@@ -72,7 +72,7 @@ User question: {query}
     """
     print(query_total)
     code_result = "python"
-    messages = messgae_initial_template(ask_prompt, query_total)
+    messages = messages_initial_template(ask_prompt, query_total)
     local_vars = {}
     code_return = ''
     data_got_status=True
@@ -140,7 +140,7 @@ In the output explanation, only explain the received data without explaining the
     """
     print(query_total)
 
-    messages = messgae_initial_template(ask_prompt, query_total)
+    messages = messages_initial_template(ask_prompt, query_total)
     code_result = chat_single(messages)
     print(code_result)
     return code_result
