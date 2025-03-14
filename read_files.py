@@ -50,24 +50,18 @@ def execute_code(code_str):
 
 
 def iterative_agent(query, test_files, str_test=None):
-    ask_prompt = """
-You are a data-processing intelligent assistant. Users will ask you questions about the contents of CSV files in the current directory, requiring you to solve problems through multiple rounds of analysis and computation. Your tasks include:
-Your responsibility is only provide data for drawing but not drawing graph itself. If user ask you to draw a graph, please do not draw it.
-Understanding the user's question about the CSV file and analyzing it step by step.
-In each round, writing a Python snippet using pandas to process the CSV file and advance the solution.(```python as the first line and ``` as the last line).
-Always give a piece of python code unless you think there is no need to write code.
-Receiving the execution results of each pandas code snippet.
-Deciding whether to write another pandas code snippet for further processing or if the final answer has been obtained.
-If further processing is needed, clearly explaining the next steps and writing the corresponding pandas code.
-If the final answer is obtained, outputting the result with final_answer as variable in last line of code 
-The JSON output should:
-Be clearly structured, containing only the essential data needed to answer the question.
-Be suitable for various visualization methods (e.g., charts, maps).
-Avoid redundant fields, keeping only the necessary information.
-Each code snippet should be clearly written to help users understand your thought process.
-Assume that the mentioned CSV files exist in the current directory and can be read using pandas (e.g., pd.read_csv("filename.csv")).
-Now, proceed with processing based on the user's query following these steps.
-    """
+    ask_prompt = """You are a data-processing intelligent assistant designed to answer questions about CSV files in the current directory. Your task is to analyze these files step-by-step using Python and pandas to provide data suitable for visualization (e.g., charts, maps), without generating the visualizations yourself. For each user query:
+
+1. Understand the question and process the CSV data incrementally through multiple rounds of analysis.
+2. In each round, unless code is unnecessary, write a Python snippet starting with ```python and ending with ```, using pandas to advance the solution.
+3. Assume CSV files exist and can be read with `pd.read_csv("filename.csv")`.
+4. After receiving execution results, decide whether further processing is needed or if the final answer is ready:
+   - If more processing is required, explain the next steps clearly and provide the corresponding pandas code.
+   - If the final answer is obtained, output the result with `final_answer` as the variable and print it out.
+5. Structure the final output as concise JSON, containing only essential data for visualization, avoiding redundant fields.
+6. Ensure code snippets are clear and well-commented to reflect your thought process.
+
+Proceed with processing based on the user's query, following these steps."""
     # test_files = ["weather.csv", "events.csv"]
     file_short = csv_to_json(test_files)
     print(file_short)
@@ -83,6 +77,7 @@ User question: {query}
     code_return = ''
     data_got_status=True
     round_num=0
+
     while True:
         round_num+=1
         code_result = chat_single(messages)
@@ -95,7 +90,9 @@ User question: {query}
             code_return = str(execute_and_display(extract_python_code(code_result), local_vars))
         else:
             code_return = code_result
+        raw_return = str(code_return)
         if len(code_return) > 2500:
+
             code_return = code_return[:2500] + "..."
 
         print("code_return", code_return)
@@ -104,8 +101,9 @@ User question: {query}
             if '```python' not in code_result:
                 data_got_status=False
             if 'traceback' not in code_return.lower():
+
                 break
-    return code_return,data_got_status
+    return raw_return[:4500],data_got_status
 
 
 def html_generate_agent_modified(data_input, query):
@@ -164,7 +162,7 @@ In the output explanation, only explain the received data without explaining the
 # ```
 # # """
 # test_files = ["uploads/pollutionData204273.csv", "uploads/trafficData158324.csv"]
-# query = "what's the pollution and traffic in different time periods?"
+# query = "what's the relationship between pollution and traffic"
 # aa,data_got_status= iterative_agent(query, test_files)
 # html_generate_agent_modified(aa,query)
 # print(execute_code(extract_words(aa,'python')))
