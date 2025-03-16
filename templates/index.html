@@ -434,10 +434,16 @@
     function generateFileAnalysisMarkdown(fileNames) {
         const fragment = document.createDocumentFragment();
 
+        // 创建单个 container 来包含所有文件
+        const container = document.createElement("div");
+        container.style.display = "flex";           // 使用 flex 布局
+        container.style.flexWrap = "nowrap";        // 防止换行
+        container.style.gap = "10px";              // 可选：添加间距
+
         fileNames.forEach(fileName => {
-            // 创建 container
-            const container = document.createElement("div");
-            container.className = "file-container";
+            // 创建文件 wrapper
+            const fileWrapper = document.createElement("div");
+            fileWrapper.className = "file-container";
 
             // 创建图标
             const icon = document.createElement("div");
@@ -449,11 +455,12 @@
             name.textContent = fileName;
 
             // 组装结构
-            container.appendChild(icon);
-            container.appendChild(name);
-            fragment.appendChild(container);
+            fileWrapper.appendChild(icon);
+            fileWrapper.appendChild(name);
+            container.appendChild(fileWrapper);
         });
 
+        fragment.appendChild(container);
         return fragment;
     }
     removeImage.addEventListener('click', () => {
